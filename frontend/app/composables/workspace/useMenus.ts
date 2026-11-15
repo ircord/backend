@@ -5,6 +5,8 @@ import { channelRights, channelTarget, topPrefix, stripFormatting } from '../../
 import { serverViewId } from '../../stores/chat'
 import { savable } from '../../stores/saved'
 import { isSortableSection } from '../../../shared/utils/sidebar-order'
+import { linkMessageId, messageLinkURL } from '../../../shared/utils/message-links'
+import { conversationPath } from '../../../shared/utils/workspace-routes'
 import type { MenuEntry } from '../shared/useContextMenu'
 import { useMessageActions } from '../chat/useMessageActions'
 import { errorText } from '../../utils/api'
@@ -595,6 +597,16 @@ export function useMenus() {
     const edit = editing(m)
     const reactionReason = chat.messageActionReason(m, 'reactions')
     const replyReason = chat.messageActionReason(m, 'replies')
+    // Pending and failed sends return above: their id changes when the server echo arrives.
+    const linked = m.conversationId.startsWith('server:')
+      ? undefined
+      : chat.data?.conversations.find((c) => c.id === m.conversationId)
+    const path = linked && conversationPath(linked.id, chat.data?.conversations ?? [])
+    // The shared ID opens for other readers too; your copy of your own message has another.
+    const link =
+      linked && path
+        ? messageLinkURL(window.location.origin, path, linkMessageId(linked.networkId, m))
+        : ''
     open(
       event,
       [
@@ -652,6 +664,15 @@ export function useMenus() {
           icon: 'copy',
           action: () => void copyMessage(m),
         },
+        ...(link
+          ? [
+              {
+                label: t('workspaceUi.message.copyLink'),
+                icon: 'link',
+                action: () => copy(link, 'workspaceUi.menus.copiedLink'),
+              },
+            ]
+          : []),
         ...bookmark,
         ...(unreadable(m)
           ? [
