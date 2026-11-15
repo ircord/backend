@@ -57,9 +57,17 @@ type connection struct {
 	pending                map[string]pending
 	batches                map[string]*multiline
 	historyBatches         map[string]bool
-	metadataSyncs          map[string]*metadataSync
-	metadataRequested      map[string]bool
-	metadataRetries        map[string]int
+	// botTagged is set once the server has sent a bot tag; only then does a
+	// message without one clear a bot mark learned from WHO or WHOIS.
+	botTagged bool
+	// Channels waiting for a bot-flags WHO as {folded, name}, and the one outstanding.
+	botWhoPending     [][2]string
+	botWhoOut         string
+	botWhoAt          time.Time
+	botWhoSeen        bool
+	metadataSyncs     map[string]*metadataSync
+	metadataRequested map[string]bool
+	metadataRetries   map[string]int
 	// metadataSubscribed is set once METADATA SUB was sent on this connection.
 	metadataSubscribed bool
 	metadataJoined     map[string]bool
