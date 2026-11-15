@@ -65,3 +65,17 @@ export function enqueueBounded<T>(queue: T[], item: T, limit = maxReadAloudQueue
   while (queue.length > limit) queue.shift()
   return queue
 }
+
+/** Turning read-aloud on by hand is confirmed aloud; turning it off, or a repeat, is not. */
+export const announcesEnabled = (wasEnabled: boolean, enable: boolean) => enable && !wasEnabled
+
+/** Sets read-aloud as the user chose, then confirms aloud when that turned it on. */
+export function applyUserEnable(
+  wasEnabled: boolean,
+  enable: boolean,
+  set: (value: boolean) => void,
+  announce: () => void,
+) {
+  set(enable)
+  if (announcesEnabled(wasEnabled, enable)) announce()
+}

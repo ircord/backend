@@ -8,6 +8,8 @@ import {
   formatDownloadSize,
   localSpeechBase,
   localSpeechCache,
+  localSwitchFor,
+  speechEngine,
   localSpeechConnectSources,
   localSpeechModel,
   localSpeechPace,
@@ -230,4 +232,17 @@ test('a slow device buffers each line, and a too slow one stops using the model'
   assert.equal(localSpeechPace(deviceSpeed([0.35, 0.33, 2.4])), 'stream')
   // Two of three slow lines do.
   assert.equal(localSpeechPace(deviceSpeed([0.35, 2.4, 1.9])), 'slow')
+})
+
+test('the voice source selector follows the on-device switch', () => {
+  // Existing users: the voice model on lands on WebGPU, everyone else (and an operator that
+  // turned the feature off) on API.
+  assert.equal(speechEngine(true), 'webgpu')
+  assert.equal(speechEngine(false), 'api')
+  assert.equal(localSwitchFor('webgpu'), true)
+  assert.equal(localSwitchFor('api'), false)
+
+  // Switching away and back round-trips through the switch.
+  for (const choice of ['webgpu', 'api', 'webgpu', 'api'] as const)
+    assert.equal(speechEngine(localSwitchFor(choice)), choice)
 })
