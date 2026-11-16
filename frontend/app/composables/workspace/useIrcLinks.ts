@@ -3,14 +3,15 @@ import { channelTarget } from '../../../shared/utils/irc'
 import { serverViewId } from '../../stores/chat'
 
 /**
- * Opens irc:// and ircs:// links: on a network you already have, join the channel (or open the
- * DM / server window); otherwise offer to add the network, prefilled. Also registers IRCord as
+ * Opens irc:// and ircs:// links: on a network you already have, ask, then join the channel (or
+ * open the DM / server window); otherwise offer to add the network, prefilled. Also registers IRCord as
  * the browser's handler for these links.
  */
 export function useIrcLinks() {
   const { t } = useI18n()
   const chat = useChatStore()
   const actions = useWorkspaceActions()
+  const { confirm } = usePrompt()
 
   /** Same server, or the same network under another hostname (irc.libera.chat ~ libera.chat). */
   function networkFor(link: IrcLink) {
@@ -36,15 +37,31 @@ export function useIrcLinks() {
     }
     try {
       if (link.channel) {
-        const existing = chat.data?.conversations.find(
-          (c) =>
-            c.networkId === network.id &&
-            c.kind === 'channel' &&
-            !c.party &&
-            channelTarget(c).toLowerCase() === link.channel!.toLowerCase(),
-        )
+        const joined = () =>
+          chat.data?.conversations.find(
+            (c) =>
+              c.networkId === network.id &&
+              c.kind === 'channel' &&
+              !c.party &&
+              channelTarget(c).toLowerCase() === link.channel!.toLowerCase(),
+          )
+        const existing = joined()
         if (existing) chat.activate(existing.id)
         else {
+          // A web page can link here with ?irc=…, so a join always asks first: joining shows
+          // everyone in the channel that you are online (#278).
+          const joining = await confirm({
+            title: t('workspaceUi.links.joinConfirm', {
+              channel: link.channel,
+              network: network.name,
+            }),
+            body: t('workspaceUi.links.joinConfirmBody'),
+            confirm: t('workspaceUi.links.joinConfirmAction'),
+          })
+          if (!joining) return
+          // The channel may have been joined while the question was open.
+          const now = joined()
+          if (now) return chat.activate(now.id)
           chat.selectNetwork(network.id)
           await chat.join.mutateAsync({ name: link.channel, key: link.key, networkId: network.id })
         }
