@@ -150,6 +150,10 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	upload, err := s.options.Files.Upload(r.Context(), account, network, header.Filename, data, provider)
+	if errors.Is(err, filehost.ErrQuota) {
+		writeProblem(w, err.Error(), http.StatusRequestEntityTooLarge)
+		return
+	}
 	if err != nil {
 		writeProblem(w, err.Error(), 400)
 		return
