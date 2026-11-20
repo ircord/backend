@@ -87,7 +87,7 @@ select {
   outline: none;
 }
 :focus-visible:where(
-  :not(.composer textarea, .search-field-control input, .expression-search input)
+  :not(.composer textarea, .composer-field, .search-field-control input, .expression-search input)
 ) {
   outline: 2px solid var(--accent) !important;
   outline-offset: 2px;
@@ -99,7 +99,8 @@ select {
   outline-offset: 2px;
 }
 input,
-textarea {
+textarea,
+.composer-field {
   caret-color: var(--accent);
 }
 textarea {

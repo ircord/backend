@@ -22,9 +22,10 @@ const OVERLAYS =
 
 export function overlayOpen(): boolean {
   if (document.querySelector(OVERLAYS)) return true
-  // Browsers without the Popover API reject the selector; they cannot have one open either.
+  // Browsers without the Popover API reject the selector; they cannot have one open either. The
+  // personal-theme layer is always open in the top layer and holds no keyboard of its own.
   try {
-    return !!document.querySelector(':popover-open')
+    return !!document.querySelector(':popover-open:not([data-ircord-theme-layer])')
   } catch {
     return false
   }

@@ -236,7 +236,7 @@ try {
   await expect(editor).toBeVisible()
   await editor.getByLabel('Status emoji', { exact: true }).press('Escape')
   await expect(editor).toHaveCount(0)
-  await expect(composer).toHaveValue('/STATUS ')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('/STATUS ')
 
   // The self menu is click-driven, preserves drafts, and can open every requested destination.
   await composer.fill('Unsent draft stays here')
@@ -251,7 +251,7 @@ try {
   await editor.getByRole('textbox', { name: 'Status text' }).press('Escape')
   await expect(editor).toHaveCount(0)
   await expect(composer).toBeFocused()
-  await expect(composer).toHaveValue('Unsent draft stays here')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('Unsent draft stays here')
 
   await openMenu()
   await menu.getByRole('menuitem', { name: 'Set yourself away', exact: true }).click()
@@ -266,18 +266,18 @@ try {
   // Direct status commands never send a message or change away state.
   await composer.fill('/status 🌿 Reading --for 30m')
   await composer.press('Enter')
-  await expect(composer).toHaveValue('')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('')
   let current = await profile()
   assert.equal(current.statusText, 'Reading')
   assert.equal(current.statusEmoji, '🌿')
   assert.equal(current.status, 'online')
   await composer.fill('/status Reading --for 0m')
   await composer.press('Enter')
-  await expect(composer).toHaveValue('/status Reading --for 0m')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('/status Reading --for 0m')
   assert.equal((await profile()).statusText, 'Reading')
   await composer.fill('/status clear')
   await composer.press('Enter')
-  await expect(composer).toHaveValue('')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('')
   current = await profile()
   assert(!current.statusText && !current.statusEmoji && !current.statusExpiresAt)
 
@@ -333,7 +333,7 @@ try {
   await expect.poll(async () => (await profile()).statusEmoji ?? '').toBe('')
   await composer.fill('/status Retry this status')
   await composer.press('Enter')
-  await expect(composer).toHaveValue('')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('')
 
   // Pages without a composer use the same editor anchored to the avatar menu.
   await page
@@ -504,14 +504,14 @@ try {
   // No-argument commands keep their direct execution path; Escape cancels guided fields.
   await composer.fill('/back')
   await composer.press('Enter')
-  await expect(composer).toHaveValue('')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('')
   await expect(commandEditor).toHaveCount(0)
   await composer.fill('/msg')
   await composer.press('Space')
   await expect(commandEditor).toBeVisible()
   await commandEditor.locator('[data-command-argument="nickname"]').press('Escape')
   await expect(commandEditor).toHaveCount(0)
-  await expect(composer).toHaveValue('/msg')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('/msg')
   await expect(composer).toBeFocused()
 
   // New nicknames are free entry, and rejected commands keep their editable fields.
@@ -526,7 +526,7 @@ try {
   await expect(newNickname).toHaveValue('123invalid')
   await newNickname.press('Escape')
   await expect(commandEditor).toHaveCount(0)
-  await expect(composer).toHaveValue('/nick')
+  await expect.poll(() => composer.evaluate((el) => el.value)).toBe('/nick')
 
   // A slow DM request keeps its target and does not pull the user out of another channel.
   phase = 'delayed private message'
@@ -586,7 +586,7 @@ try {
     await page.keyboard.press('Escape')
     await page.keyboard.press('Escape')
     await expect(commandEditor).toHaveCount(0)
-    await expect(composer).toHaveValue(`/${spec.name}`)
+    await expect.poll(() => composer.evaluate((el) => el.value)).toBe(`/${spec.name}`)
   }
   for (const [alias, canonical] of Object.entries(commandAliases)) {
     await composer.fill(`/${alias}`)

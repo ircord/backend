@@ -83,7 +83,7 @@ try {
   page.setDefaultTimeout(10000)
   page.on('pageerror', (error) => errors.push(error.stack))
   await page.goto(`${base}/channel/general`)
-  const field = page.locator('.composer textarea')
+  const field = page.locator('.composer-field')
   await field.waitFor()
   const gif = page.getByRole('button', { name: 'Choose a GIF', exact: true })
   const emojiButton = page.getByRole('button', { name: 'Choose an emoji', exact: true })
@@ -169,7 +169,8 @@ try {
     // Synthetic composition events cover DOM and reactive state, not a native software keyboard.
     const composing = await field.evaluate((el) => {
       el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
-      el.setRangeText('に', 6, 14, 'end')
+      el.setSelectionRange(6, 14)
+      document.execCommand('insertText', false, 'に')
       el.dispatchEvent(
         new InputEvent('input', {
           bubbles: true,
@@ -221,7 +222,7 @@ try {
     )
     await field.pressSequentially(' committed')
     assert.equal(
-      await field.inputValue(),
+      await field.evaluate((el) => el.value),
       `${composing.value.slice(0, composing.selection[0])} committed${composing.value.slice(composing.selection[1])}`,
     )
 
@@ -269,7 +270,7 @@ try {
     await page.locator('.expression-picker [data-emoji-index="0"]').tap()
     await page.locator('.expression-picker').waitFor({ state: 'hidden' })
     assert(await field.evaluate((el) => el === document.activeElement))
-    assert((await field.inputValue()).includes('😄'))
+    assert((await field.evaluate((el) => el.value)).includes('😄'))
     assert.equal(await emojiButton.isVisible(), false)
     await field.blur()
     await gif.tap()
@@ -302,7 +303,7 @@ try {
     await page.keyboard.press('Escape')
     await page.locator('.expression-picker').waitFor({ state: 'hidden' })
     await page.waitForFunction(
-      () => document.activeElement === document.querySelector('.composer textarea'),
+      () => document.activeElement === document.querySelector('.composer-field'),
     )
     assert.deepEqual(
       await field.evaluate((el) => [
@@ -319,7 +320,7 @@ try {
     await page.locator('.composer-suggestions').waitFor()
     assert(await field.evaluate((el) => el === document.activeElement))
     await field.press('Enter')
-    assert.equal(await field.inputValue(), '😄')
+    assert.equal(await field.evaluate((el) => el.value), '😄')
     await field.fill('')
     // A nickname typed in full is sent by Enter, but one chosen with the arrow keys is completed.
     const sentBefore = sent.length
@@ -327,24 +328,24 @@ try {
     await page.locator('.composer-suggestions').waitFor()
     await field.press('ArrowDown')
     await field.press('Enter')
-    assert.equal(await field.inputValue(), '@ada ')
+    assert.equal(await field.evaluate((el) => el.value), '@ada ')
     assert.equal(sent.length, sentBefore, 'Enter on an arrowed nickname cannot send')
     await field.fill('@ada')
     await page.locator('.composer-suggestions').waitFor()
     await field.press('Enter')
-    assert.equal(await field.inputValue(), '')
+    assert.equal(await field.evaluate((el) => el.value), '')
     await field.fill('')
     assert(await gif.isVisible())
     assert(await emojiButton.isVisible())
     await field.pressSequentially('Fixture send')
     await send.tap()
-    assert.equal(await field.inputValue(), '')
+    assert.equal(await field.evaluate((el) => el.value), '')
     assert(await field.evaluate((el) => el === document.activeElement))
     assert(await gif.isVisible())
     assert(await emojiButton.isVisible())
     await field.blur()
     await page.keyboard.type('x')
-    assert.equal(await field.inputValue(), 'x')
+    assert.equal(await field.evaluate((el) => el.value), 'x')
 
     // The same draft at desktop widths retains both controls and the same textarea.
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -366,7 +367,7 @@ try {
     await settings.getByRole('button', { name: 'Close dialog', exact: true }).click()
     await settings.waitFor({ state: 'hidden' })
     await page.waitForFunction(
-      () => document.activeElement === document.querySelector('.composer textarea'),
+      () => document.activeElement === document.querySelector('.composer-field'),
     )
     assert.deepEqual(
       await field.evaluate((el) => [
@@ -380,11 +381,11 @@ try {
     const sidebar = page.locator('.conversation-sidebar')
     await sidebar.getByText('design', { exact: true }).click()
     await page.waitForURL(`${base}/channel/design`)
-    assert.equal(await field.inputValue(), '')
+    assert.equal(await field.evaluate((el) => el.value), '')
     assert.equal(await field.evaluate((el) => el === document.activeElement), false)
     await sidebar.getByText('general', { exact: true }).click()
     await page.waitForURL(`${base}/channel/general`)
-    assert.equal(await field.inputValue(), 'Desktop draft')
+    assert.equal(await field.evaluate((el) => el.value), 'Desktop draft')
     assert.equal(await field.evaluate((el) => el === document.activeElement), false)
     assert.deepEqual(errors, [])
     console.log(

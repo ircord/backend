@@ -11,6 +11,12 @@
   vertical-align: -0.45em;
   margin: 0 1px;
 }
+/* In the message box, emoji fit its line height so lines don't jump as they appear. */
+.composer-emoji {
+  width: 1.4em;
+  height: 1.4em;
+  vertical-align: -0.35em;
+}
 .message-text .emoji-only-message {
   font-size: calc(var(--message-size) * 2.3);
   line-height: 1.3;

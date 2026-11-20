@@ -35,7 +35,15 @@ const nameStyle = useNameStyle()
 const messageActions = useMessageActions()
 const messageEditing = useMessageEditing()
 const history = useQuery(() => messagesQuery(chat.activeId))
+/** The message box: a textarea for commands, else the emoji field, which acts like one. */
 const input = ref<HTMLTextAreaElement | null>(null)
+const textField = ref<HTMLTextAreaElement | null>(null)
+const emojiField = ref<HTMLElement | null>(null)
+watch(
+  [textField, emojiField],
+  ([text, emoji]) => (input.value = text ?? (emoji as HTMLTextAreaElement | null)),
+  { flush: 'sync' },
+)
 useTypeToCompose(input)
 const fileInput = ref<HTMLInputElement | null>(null)
 const composerElement = ref<HTMLFormElement | null>(null)
@@ -129,6 +137,7 @@ const draft = computed({
     else delete chat.drafts[chat.activeId]
   },
 })
+useEmojiField(emojiField, draft, 4000)
 /** In the server window, plain text is sent to the server as a raw line. */
 const rawMode = computed(() => !!chat.serverView)
 const enabled = computed(() => chat.canSend)
@@ -812,7 +821,7 @@ defineExpose({
     <form
       v-show="!statusNetwork"
       ref="composerElement"
-      class="composer flex items-end gap-1 min-h-12 pt-[9px] pr-2.5 pb-[9px] pl-3.5 [background:linear-gradient(180deg,color-mix(in_srgb,var(--input)_92%,#000),var(--input))] rounded-[14px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--border)_90%,rgb(255_255_255/6%)),0_8px_24px_rgb(0_0_0/20%)] focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_52%,var(--border)),0_8px_26px_rgb(0_0_0/26%)] [transition:box-shadow_0.15s] [&.composer-disabled]:opacity-70 [&.is-raw]:pl-3.5 [&.is-raw]:font-code [&_.icon-button]:w-[34px] [&_.icon-button]:h-7.5 [&_.icon-button]:text-foreground [&_.icon-button]:opacity-[0.78] [&_.icon-button:hover:not(:disabled)]:opacity-100 [&_.icon-button.is-open]:opacity-100 [&_.icon-button.is-open]:bg-accent max-[700px]:min-h-10 max-[700px]:py-0.5 max-[700px]:[&.has-draft:has(textarea:focus)_.composer-expression]:hidden"
+      class="composer flex items-end gap-1 min-h-12 pt-[9px] pr-2.5 pb-[9px] pl-3.5 [background:linear-gradient(180deg,color-mix(in_srgb,var(--input)_92%,#000),var(--input))] rounded-[14px] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--border)_90%,rgb(255_255_255/6%)),0_8px_24px_rgb(0_0_0/20%)] focus-within:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_52%,var(--border)),0_8px_26px_rgb(0_0_0/26%)] [transition:box-shadow_0.15s] [&.composer-disabled]:opacity-70 [&.is-raw]:pl-3.5 [&.is-raw]:font-code [&_.icon-button]:w-[34px] [&_.icon-button]:h-7.5 [&_.icon-button]:text-foreground [&_.icon-button]:opacity-[0.78] [&_.icon-button:hover:not(:disabled)]:opacity-100 [&_.icon-button.is-open]:opacity-100 [&_.icon-button.is-open]:bg-accent max-[700px]:min-h-10 max-[700px]:py-0.5 max-[700px]:[&.has-draft:has(.composer-field:focus)_.composer-expression]:hidden"
       :class="{
         'composer-disabled': !enabled,
         'is-raw': rawMode,
@@ -841,22 +850,46 @@ defineExpose({
       <!-- Drafting stays available while sending reconnects. Disabling the same focused
            textarea node blurs it before the network comes back. -->
       <textarea
-        ref="input"
+        v-if="rawMode"
+        ref="textField"
         v-model="draft"
         dir="auto"
-        class="order-1 block flex-1 self-center min-w-0 h-7.5 min-h-7.5 max-h-50 m-0 resize-none py-1 px-0 bg-transparent border-0 text-foreground text-[length:var(--message-size)] leading-[22px] outline-none! placeholder:text-faint max-[700px]:text-[16px] [@media(pointer:coarse)]:text-[length:max(16px,var(--message-size))]"
-        :class="rawMode ? 'font-code' : 'font-chat'"
+        class="order-1 block flex-1 self-center min-w-0 h-7.5 min-h-7.5 max-h-50 m-0 resize-none py-1 px-0 bg-transparent border-0 text-foreground text-[length:var(--message-size)] leading-[22px] outline-none! placeholder:text-faint max-[700px]:text-[16px] [@media(pointer:coarse)]:text-[length:max(16px,var(--message-size))] font-code"
         data-saved-draft
-        :aria-label="
-          rawMode
-            ? $t('workspaceUi.composer.commandTarget', { target })
-            : $t('workspaceUi.composer.messageTarget', { target })
-        "
+        :aria-label="$t('workspaceUi.composer.commandTarget', { target })"
         :aria-describedby="inputHelp"
-        :aria-keyshortcuts="rawMode ? undefined : shortcutKeys.aria('gifs')"
         :placeholder="placeholder"
         rows="1"
         :maxlength="4000"
+        aria-autocomplete="list"
+        :aria-controls="!statusNetwork && suggestionCount ? suggestionsId : undefined"
+        :aria-activedescendant="
+          !statusNetwork && suggestionCount ? `${suggestionsId}-${suggestionIndex}` : undefined
+        "
+        @input="onInput"
+        @keydown="onKeydown"
+        @keyup="auto.trackCaret"
+        @click="auto.trackCaret"
+        @focus="onFocus"
+        @blur="onBlur"
+        @paste="paste"
+      />
+      <!-- Messages: server emoji show as images while the text stays `:name:` (useEmojiField). -->
+      <div
+        v-else
+        ref="emojiField"
+        contenteditable="true"
+        role="textbox"
+        aria-multiline="true"
+        dir="auto"
+        class="composer-field order-1 block flex-1 self-center min-w-0 h-7.5 min-h-7.5 max-h-50 m-0 overflow-y-auto py-1 px-0 bg-transparent border-0 text-foreground text-[length:var(--message-size)] leading-[22px] whitespace-pre-wrap [overflow-wrap:anywhere] outline-none! max-[700px]:text-[16px] [@media(pointer:coarse)]:text-[length:max(16px,var(--message-size))] font-chat data-empty:before:content-[attr(data-placeholder)] data-empty:before:text-faint data-empty:before:pointer-events-none"
+        :data-empty="!draft || undefined"
+        :data-placeholder="placeholder"
+        :aria-placeholder="placeholder"
+        data-saved-draft
+        :aria-label="$t('workspaceUi.composer.messageTarget', { target })"
+        :aria-describedby="inputHelp"
+        :aria-keyshortcuts="shortcutKeys.aria('gifs')"
         aria-autocomplete="list"
         :aria-controls="!statusNetwork && suggestionCount ? suggestionsId : undefined"
         :aria-activedescendant="
