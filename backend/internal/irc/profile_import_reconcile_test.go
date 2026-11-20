@@ -87,7 +87,7 @@ func TestImportedProfileHistoryIsAccountScoped(t *testing.T) {
 	c := profileConnection(m, "bob", "one")
 	answerProfileCheck(c, nil)
 	flags, err := s.ProfileImports("bob", "one")
-	if err != nil || !flags["bio"] || len(c.queue) != 0 {
+	if err != nil || !flags["bio"] || len(queuedProfile(c)) != 0 {
 		t.Fatal("another account's publication history established an import", flags, err)
 	}
 }
@@ -99,10 +99,10 @@ func TestImportedProfileWaitsForCompleteValidCheck(t *testing.T) {
 	<-c.queue
 	c.profileCheckReply(*girc.ParseEvent(":irc.test 761 onenick onenick bio * :Legacy bio"))
 	flags, _ := s.ProfileImports("alice", "one")
-	if !flags["bio"] || len(c.queue) != 0 {
+	if !flags["bio"] || len(queuedProfile(c)) != 0 {
 		t.Fatal("an incomplete check changed imports or published", flags)
 	}
-	for _, key := range metadataKeys {
+	for _, key := range subscribedKeys() {
 		if key == "bio" || key == "avatar" {
 			continue
 		}
@@ -111,7 +111,7 @@ func TestImportedProfileWaitsForCompleteValidCheck(t *testing.T) {
 	c.profileCheckReply(*girc.ParseEvent(":irc.test 761 onenick onenick avatar * :http://example.com/invalid.png"))
 	flags, _ = s.ProfileImports("alice", "one")
 	p, _ := m.NetworkProfile("alice", "one")
-	if !flags["avatar"] || flags["bio"] || p.AvatarURL != testAvatar || len(c.queue) != 0 {
+	if !flags["avatar"] || flags["bio"] || p.AvatarURL != testAvatar || len(queuedProfile(c)) != 0 {
 		t.Fatal("invalid upstream value was adopted or established", flags, p)
 	}
 }
@@ -123,7 +123,7 @@ func TestImportedProfileDoesNotReleaseFlagWhenStorageFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	answerProfileCheck(c, map[string]string{"avatar": testAvatar, "bio": "Newer upstream bio"})
-	if m.StorageError("alice") == nil || len(c.queue) != 0 {
+	if m.StorageError("alice") == nil || len(queuedProfile(c)) != 0 {
 		t.Fatal("storage failure was not reported or allowed publication")
 	}
 	flags, err := s.ProfileImports("alice", "one")

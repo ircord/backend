@@ -22,10 +22,10 @@ import (
 // server what the account already shares (METADATA * GET) and publishes a field only when that
 // cannot overwrite something another session set:
 //   - the server has no value for it (a fresh client, or the field was never shared), or
-//   - the server still has the value this backend last sent or found already shared for it,
+//   - the server still has the value this backend last confirmed or found already shared for it,
 //     so the difference is our own edit made while IRC was unreachable.
 //
-// What was last sent or found is kept per account and network in account storage, so it holds
+// What was last confirmed is kept per account and network in account storage, so it holds
 // across reconnects, network edits and backend restarts. Any other value was set elsewhere and
 // is left alone until the user edits that field here. An edit publishes only the fields it
 // changed.
@@ -117,16 +117,18 @@ func changedProfileKeys(before, after Member) []string {
 	return keys
 }
 
-// pushProfileKeys publishes the given fields of our profile; an empty value removes the key.
-// The value counts as published once the writer has sent it (recordSentProfile).
+// pushProfileKeys queues the given fields of our profile. An empty value removes the key.
 func (c *connection) pushProfileKeys(p Member, keys []string) {
-	if len(keys) == 0 || !c.has("draft/metadata-3") {
+	if len(keys) == 0 {
 		return
 	}
 	values := profileValues(p)
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.ready || !c.caps["draft/metadata-3"] {
+		return
+	}
 	limit := c.lineBytes
-	c.mu.Unlock()
 	if limit <= 0 {
 		limit = safeMessageLineBytes(girc.DefaultMaxLineLength - girc.DefaultMaxPrefixLength)
 	}
@@ -136,25 +138,8 @@ func (c *connection) pushProfileKeys(p Member, keys []string) {
 			slog.Warn("Profile value exceeds the network metadata line limit", "network", c.config.ID, "key", key)
 			continue
 		}
-		params := []string{"*", "SET", key}
-		if values[key] != "" {
-			params = append(params, values[key])
-		}
-		_ = c.enqueue(&girc.Event{Command: "METADATA", Params: params})
+		c.queueMetadataLocked(key, values[key])
 	}
-}
-
-// recordSentProfile is called by the writer for every line it sent. A queued SET that was
-// dropped on a disconnect is never recorded, so the next connect can still publish it.
-func (c *connection) recordSentProfile(e *girc.Event) {
-	if e.Command != "METADATA" || len(e.Params) < 3 || e.Params[0] != "*" || e.Params[1] != "SET" || !isMetadataKey(e.Params[2]) {
-		return
-	}
-	value := ""
-	if len(e.Params) >= 4 {
-		value = e.Params[3]
-	}
-	c.recordPublished(map[string]string{e.Params[2]: value})
 }
 
 // publishedProfile returns what this account last published on this network, loading it from
@@ -188,7 +173,7 @@ func (c *connection) loadPublishedLocked() map[string]string {
 	return values
 }
 
-// recordPublished stores values the server now holds because this backend sent or found them.
+// recordPublished stores values the server confirmed or this backend found there.
 func (c *connection) recordPublished(values map[string]string) {
 	if len(values) == 0 {
 		return
@@ -212,8 +197,8 @@ func (c *connection) recordPublished(values map[string]string) {
 }
 
 // checkPublishedProfile asks the server for the values our account already shares. The profile
-// is published once all of them are answered; without every answer within profileCheckTimeout
-// nothing is published on this connection until the next edit. It takes only c.mu.
+// is reconciled once all answers arrive. If the check times out, only explicit
+// edits and device changes are sent. It takes only c.mu.
 func (c *connection) checkPublishedProfile() {
 	c.mu.Lock()
 	c.profileCheck = map[string]string{}
@@ -221,9 +206,11 @@ func (c *connection) checkPublishedProfile() {
 	c.profileCheckGen++
 	gen := c.profileCheckGen
 	c.mu.Unlock()
-	if err := c.enqueue(metadataKeyEvents("GET", metadataKeys)...); err != nil {
+	if err := c.enqueue(metadataKeyEvents("GET", subscribedKeys())...); err != nil {
 		c.mu.Lock()
 		c.profileCheck = nil
+		c.profileCheckDone = true
+		c.wakeMetadataLocked(time.Now())
 		c.mu.Unlock()
 		return
 	}
@@ -233,10 +220,11 @@ func (c *connection) checkPublishedProfile() {
 		if expired {
 			c.profileCheck = nil
 			c.profileCheckDone = true
+			c.wakeMetadataLocked(time.Now())
 		}
 		c.mu.Unlock()
 		if expired {
-			slog.Warn("The server did not answer the profile check; the profile is published on its next edit", "network", c.config.ID)
+			slog.Warn("The server did not complete the profile check", "network", c.config.ID)
 		}
 	})
 }
@@ -257,7 +245,8 @@ func (c *connection) profileCheckReply(e girc.Event) {
 		return
 	}
 	target, key := e.Params[1], e.Params[2]
-	if c.fold(target) != c.fold(c.currentNick()) || !isMetadataKey(key) {
+	nick := c.fold(c.currentNick())
+	if c.fold(target) != nick || c.fold(e.Params[0]) != nick || !isMetadataKey(key) && key != deviceKey {
 		return
 	}
 	c.mu.Lock()
@@ -266,12 +255,13 @@ func (c *connection) profileCheckReply(e girc.Event) {
 		return
 	}
 	c.profileCheck[key] = value
-	if len(c.profileCheck) < len(metadataKeys) {
+	if len(c.profileCheck) < len(metadataKeys)+1 {
 		c.mu.Unlock()
 		return
 	}
 	upstream := c.profileCheck
 	c.profileCheck = nil
+	c.metadataWrites.known = upstream
 	c.mu.Unlock()
 
 	published := c.publishedProfile()
@@ -293,7 +283,11 @@ func (c *connection) profileCheckReply(e girc.Event) {
 		importsChanged = true
 	}
 	var keys []string
+	c.mu.Lock()
+	edits := maps.Clone(c.metadataWrites.pending)
+	c.mu.Unlock()
 	for _, key := range metadataKeys {
+		_, edited := edits[key]
 		switch {
 		case ours[key] == upstream[key]:
 			// Already shared: remember it, so a later offline edit of this field is ours.
@@ -302,6 +296,8 @@ func (c *connection) profileCheckReply(e girc.Event) {
 			if imports[key] && ours[key] != "" && applyProfileMetadata(&candidate, key, ours[key]) {
 				releaseImport(key)
 			}
+		case edited:
+			// A local edit made during the check already has a value in the queue.
 		case imports[key]:
 			// A legacy copy alone is not publication intent. A valid server value or
 			// matching network-specific history establishes that this field was shared here.
@@ -351,6 +347,7 @@ func (c *connection) profileCheckReply(e girc.Event) {
 	w.mu.Unlock()
 	c.mu.Lock()
 	c.profileCheckDone = true
+	c.wakeMetadataLocked(time.Now())
 	c.mu.Unlock()
 }
 

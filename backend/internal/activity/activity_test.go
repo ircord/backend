@@ -2,6 +2,7 @@ package activity
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -87,6 +88,47 @@ type fakeSource struct {
 	read      map[string]bool
 	away      map[string][]bool
 	devices   map[string][]string
+}
+
+func TestDeviceMetadataWaitsForReconnect(t *testing.T) {
+	h := newHarness(t)
+	connect := func(session, incarnation, form string) func() {
+		sub, stop := h.r.SubscribeClient("alice", session, "tab", incarnation)
+		if !h.r.ReportState("alice", session, Report{
+			Tab: "tab", Incarnation: incarnation, ConnectionID: sub.connection,
+			Sequence: 1, Signal: "engagement", Active: true, FormFactor: form,
+		}) {
+			t.Fatal("activity report was rejected")
+		}
+		return stop
+	}
+	want := func(values ...string) {
+		t.Helper()
+		if got := h.source.devices["alice"]; !slices.Equal(got, values) {
+			t.Fatalf("published devices = %q, want %q", got, values)
+		}
+	}
+	stopPhone := connect("mobile", "phone-1", Phone)
+	want(Phone)
+	stopPhone()
+	h.at(time.Second)
+	want(Phone)
+	stopPhone = connect("mobile", "phone-2", Phone)
+	h.at(reconnectGrace + time.Second)
+	want(Phone)
+
+	stopDesktop := connect("desktop", "desktop-1", Desktop)
+	want(Phone, "")
+	stopDesktop()
+	h.at(reconnectGrace + 2*time.Second)
+	stopDesktop = connect("desktop", "desktop-2", Desktop)
+	want(Phone, "")
+	stopDesktop()
+	h.at(2*reconnectGrace + 2*time.Second)
+	want(Phone, "", Phone)
+	stopPhone()
+	h.at(3*reconnectGrace + 2*time.Second)
+	want(Phone, "", Phone, "")
 }
 
 type blockedPresenceSource struct {

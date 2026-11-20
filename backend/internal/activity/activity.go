@@ -200,6 +200,8 @@ type account struct {
 	since              time.Time
 	autoAway           bool
 	device             string
+	deviceSession      string
+	deviceReconnectAt  time.Time
 	appliedAway        bool
 	appliedDevice      string
 }
@@ -531,7 +533,10 @@ func (r *Router) reportLocked(owner string, a *account, id, tabID string, active
 	} else if wasAnyActive {
 		a.since = now
 	}
-	r.deviceLocked(a)
+	if active && engaged && id != a.deviceSession {
+		a.deviceReconnectAt = time.Time{}
+	}
+	r.deviceLocked(a, now)
 	changed := oldFocal != a.focal || wasActive != a.active(now) || wasSessionActive != a.sessionActive(id, now) || oldForm != s.formFactor || oldCanAlert != s.canAlert || active && (oldTab == nil || oldTab.viewed != viewed)
 	if changed {
 		r.changedLocked(owner, a)
@@ -543,9 +548,9 @@ func (r *Router) reportLocked(owner string, a *account, id, tabID string, active
 func (r *Router) EndSession(owner, id string) {
 	now := r.options.Now()
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	a := r.accounts[owner]
 	if a == nil {
+		r.mu.Unlock()
 		return
 	}
 	r.expireLocked(owner, a, now)
@@ -569,7 +574,10 @@ func (r *Router) EndSession(owner, id string) {
 	}
 	// Keep the focal identity until new genuine engagement. Revocation removes
 	// authorization, not the remaining devices' five-minute protection.
+	r.deviceLocked(a, now)
 	r.changedLocked(owner, a)
+	r.mu.Unlock()
+	r.syncPresence(owner)
 }
 
 func single(item Item) Alert {
@@ -990,7 +998,7 @@ func (r *Router) SubscribeClient(owner, id, tabID, incarnation string) (*Subscri
 	a := r.account(owner)
 	a.session(id, now).subs[sub] = struct{}{}
 	a.sockets++
-	r.deviceLocked(a)
+	r.deviceLocked(a, now)
 	r.changedLocked(owner, a)
 	r.mu.Unlock()
 	r.syncPresence(owner)
@@ -1003,9 +1011,14 @@ func (r *Router) SubscribeClient(owner, id, tabID, incarnation string) (*Subscri
 				r.mu.Unlock()
 				return
 			}
+			now := r.options.Now()
 			if s := a.sessions[id]; s != nil {
+				_, removed := s.subs[sub]
 				delete(s.subs, sub)
-				s.seen = r.options.Now()
+				s.seen = now
+				if removed && len(s.subs) == 0 && id == a.deviceSession {
+					a.deviceReconnectAt = now.Add(reconnectGrace)
+				}
 				same := false
 				for other := range s.subs {
 					if other.tab == tabID {
@@ -1015,7 +1028,7 @@ func (r *Router) SubscribeClient(owner, id, tabID, incarnation string) (*Subscri
 				if !same {
 					key := id + "\x00" + tabID
 					if t := a.tabs[key]; t != nil {
-						until := r.options.Now().Add(reconnectGrace)
+						until := now.Add(reconnectGrace)
 						if until.Before(t.expires) {
 							t.expires = until
 						}
@@ -1023,7 +1036,7 @@ func (r *Router) SubscribeClient(owner, id, tabID, incarnation string) (*Subscri
 				}
 			}
 			a.sockets--
-			r.deviceLocked(a)
+			r.deviceLocked(a, now)
 			r.changedLocked(owner, a)
 			r.mu.Unlock()
 			r.syncPresence(owner)
@@ -1272,11 +1285,16 @@ func (r *Router) transition(owner string, delays Delays, now time.Time) {
 func (r *Router) tick(now time.Time) {
 	r.mu.Lock()
 	owners, away, blocked := []string{}, []string{}, []string{}
+	var devices []string
 	for owner, a := range r.accounts {
 		if a.persistenceBlocked {
 			blocked = append(blocked, owner)
 		}
 		r.expireLocked(owner, a, now)
+		if !a.deviceReconnectAt.IsZero() && !now.Before(a.deviceReconnectAt) {
+			r.deviceLocked(a, now)
+			devices = append(devices, owner)
+		}
 		if a.interval != nil && !a.interval.AllDone {
 			owners = append(owners, owner)
 		}
@@ -1295,6 +1313,9 @@ func (r *Router) tick(now time.Time) {
 	}
 	if r.options.Source == nil {
 		return
+	}
+	for _, owner := range devices {
+		r.syncPresence(owner)
 	}
 	sort.Strings(owners)
 	for _, owner := range owners {
@@ -1381,17 +1402,25 @@ func (r *Router) retryCandidates(owner string) {
 
 // Existing public form-factor and automatic-AWAY behavior stays independent of
 // private routing. No private names, preferences or identifiers reach IRC.
-func (r *Router) deviceLocked(a *account) {
+func (r *Router) deviceLocked(a *account, now time.Time) {
+	if !a.deviceReconnectAt.IsZero() {
+		s := a.sessions[a.deviceSession]
+		if now.Before(a.deviceReconnectAt) && s != nil && !s.revoked && len(s.subs) == 0 {
+			return
+		}
+		a.deviceReconnectAt = time.Time{}
+	}
 	best := ""
 	var found *session
 	for id, s := range a.sessions {
-		if len(s.subs) == 0 {
+		if len(s.subs) == 0 || s.revoked {
 			continue
 		}
 		if found == nil || s.lastActive.After(found.lastActive) || s.lastActive.Equal(found.lastActive) && id < best {
 			best, found = id, s
 		}
 	}
+	a.deviceSession = best
 	a.device = ""
 	if found != nil && (found.formFactor == Phone || found.formFactor == Tablet) {
 		a.device = found.formFactor

@@ -116,24 +116,16 @@ func TestStoredSelfNamesWithoutSource(t *testing.T) {
 }
 
 func TestPushProfileSharesOnlyExplicitNames(t *testing.T) {
-	c := &connection{ctx: context.Background(), ready: true, queue: make(chan []*girc.Event, 8), caps: map[string]bool{"draft/metadata-3": true}}
-	shared := func(p Member) []string {
-		c.pushProfileKeys(p, metadataKeys)
-		for {
-			events := <-c.queue
-			if events[0].Params[2] == "display-name" {
-				for len(c.queue) > 0 {
-					<-c.queue
-				}
-				return events[0].Params
-			}
-		}
+	c := &connection{ctx: context.Background(), ready: true, caps: map[string]bool{"draft/metadata-3": true}}
+	shared := func(p Member) string {
+		c.pushProfileKeys(p, []string{"display-name"})
+		return queuedProfile(c)["display-name"]
 	}
-	if params := shared(Member{Nick: "alice", DisplayName: "alice", NameSource: "nick"}); len(params) != 3 {
-		t.Fatal("nickname fallback shared as a profile name", params)
+	if value := shared(Member{Nick: "alice", DisplayName: "alice", NameSource: "nick"}); value != "" {
+		t.Fatal("nickname fallback shared as a profile name", value)
 	}
-	if params := shared(Member{Nick: "alice", DisplayName: "Alice", NameSource: "profile"}); len(params) != 4 || params[3] != "Alice" {
-		t.Fatal("explicit name not shared", params)
+	if value := shared(Member{Nick: "alice", DisplayName: "Alice", NameSource: "profile"}); value != "Alice" {
+		t.Fatal("explicit name not shared", value)
 	}
 }
 

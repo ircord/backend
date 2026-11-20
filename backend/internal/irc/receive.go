@@ -83,13 +83,20 @@ func (c *connection) receive(client *girc.Client, e girc.Event) {
 		c.receiveConversation(e)
 	case "JOIN", "PART", "KICK", "QUIT", "353", "366", "352", "354", "MODE", "ACCOUNT", "CHGHOST":
 		c.receiveMemberSync(client, e)
-	case "761", "METADATA":
+	case "761":
+		if c.metadataWriteReply(e) {
+			break
+		}
 		c.profileCheckReply(e)
+		c.metadata(e)
+	case "METADATA":
 		c.metadata(e)
 	case "774":
 		c.retryMetadataSync(e)
 	case "766":
-		c.receiveMetadataCleared(e)
+		if !c.metadataWriteReply(e) {
+			c.receiveMetadataCleared(e)
+		}
 	case "REDACT":
 		c.redact(e)
 	case "ACK":
@@ -99,6 +106,8 @@ func (c *connection) receive(client *girc.Client, e girc.Event) {
 	case "433":
 		c.nicknameConflict(client, e)
 	case "FAIL", "400", "401", "403", "404", "405", "407", "411", "412", "417", "421", "442", "443", "471", "472", "473", "474", "475", "477", "478", "482":
-		c.receiveCommandFailure(e)
+		if e.Command != "FAIL" || !c.metadataWriteReply(e) {
+			c.receiveCommandFailure(e)
+		}
 	}
 }

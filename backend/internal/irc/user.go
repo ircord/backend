@@ -275,11 +275,35 @@ func (m *Manager) SetAway(owner, network, reason string) error {
 	if err != nil {
 		return err
 	}
-	m.manualAway(owner, network, reason)
-	if reason == "" {
-		return c.enqueue(&girc.Event{Command: "AWAY"})
+	return c.setAway(awayEvent(reason))
+}
+
+func (c *connection) setAway(event *girc.Event) error {
+	w := c.owner
+	network := c.config.ID
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	reason := event.Last()
+	c.pruneAwayChanges()
+	self := w.networkSelf(network)
+	same := !c.awayUncertain && (self.Status == "online" && reason == "" ||
+		self.Status == "away" && reason != "" && self.AwayMessage == reason)
+	if len(c.awayPending) > 0 {
+		same = c.awayPending[len(c.awayPending)-1].reason == reason
 	}
-	return c.enqueue(&girc.Event{Command: "AWAY", Params: []string{reason}})
+	if same && len(event.Params) <= 1 {
+		c.mu.Lock()
+		ready := c.ready && c.ctx.Err() == nil && (c.attemptDone == nil || c.transportAliveLocked())
+		c.mu.Unlock()
+		if !ready {
+			return ErrDisconnected
+		}
+	} else if err := c.enqueueAway(event); err != nil {
+		return err
+	}
+	delete(w.autoAwaySent, network)
+	w.setAwayText(network, reason)
+	return nil
 }
 
 func (m *Manager) Nick(owner, network, nick string) error {
@@ -314,6 +338,11 @@ func (c *connection) receiveUser(client *girc.Client, e girc.Event) {
 				}
 			}
 			if v.ID == w.self.ID {
+				if w.awayOn == nil {
+					w.awayOn = map[string]bool{}
+				}
+				w.awayOn[c.config.ID] = v.Status == "away"
+				c.awayUncertain = false
 				w.saveNetworkSelf(c.config.ID, v)
 			} else {
 				w.members[v.ID] = v
@@ -325,14 +354,16 @@ func (c *connection) receiveUser(client *girc.Client, e girc.Event) {
 		w := c.owner
 		w.mu.Lock()
 		self := w.networkSelf(c.config.ID)
+		away := e.Command == "306"
+		reason := c.awayReplyReason(away)
 		self.Status, self.AwayMessage = "online", ""
-		if e.Command == "306" {
-			self.Status, self.AwayMessage = "away", w.awayText[c.config.ID]
+		if away {
+			self.Status, self.AwayMessage = "away", reason
 		}
 		if w.awayOn == nil {
 			w.awayOn = map[string]bool{}
 		}
-		w.awayOn[c.config.ID] = e.Command == "306"
+		w.awayOn[c.config.ID] = away
 		w.saveNetworkSelf(c.config.ID, self)
 		w.mu.Unlock()
 	case "SETNAME":

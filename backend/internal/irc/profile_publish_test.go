@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/lrstanley/girc"
 )
@@ -70,33 +71,28 @@ func TestProfileCheckPublishesAfterAllAnswers(t *testing.T) {
 	if len(c.queue) != 0 || c.profileCheckDone {
 		t.Fatal("published before every key was answered")
 	}
-	for _, key := range metadataKeys {
+	for _, key := range subscribedKeys() {
 		if key == "display-name" || key == "avatar" || key == "color" || key == "bio" {
 			continue
 		}
 		c.profileCheckReply(*girc.ParseEvent(":irc.test 766 alice alice " + key + " :Key is not set"))
 	}
 	c.profileCheckReply(*girc.ParseEvent(":irc.test 766 alice alice bio :Key is not set"))
-	var set []string
-	for len(c.queue) > 0 {
-		e := (<-c.queue)[0]
-		set = append(set, e.Params[2])
-	}
+	set := c.nextMetadataLocked(time.Now())
 	// The name was shared by another session and stays; the bio was not set anywhere.
-	if !slices.Equal(set, []string{"bio"}) {
+	if set == nil || !slices.Equal(set.Params, []string{"*", "SET", "bio", "hello"}) {
 		t.Fatal("unexpected keys published", set)
 	}
 	// Fields the server already holds with our value count as ours; a queued SET does not
-	// count until it is sent.
+	// count until the server confirms it.
 	if v, ok := c.profilePublished["avatar"]; !ok || v != "" {
 		t.Fatal("matching value not recorded", c.profilePublished)
 	}
 	if _, ok := c.profilePublished["bio"]; ok {
-		t.Fatal("a queued SET was recorded before it was sent", c.profilePublished)
+		t.Fatal("a SET was recorded before the server confirmed it", c.profilePublished)
 	}
-	c.recordSentProfile(&girc.Event{Command: "METADATA", Params: []string{"*", "SET", "bio", "hello"}})
-	if c.profilePublished["bio"] != "hello" {
-		t.Fatal("sent value not recorded", c.profilePublished)
+	if !c.metadataWriteReply(*girc.ParseEvent(":irc.test 761 alice alice bio * :hello")) || c.profilePublished["bio"] != "hello" {
+		t.Fatal("confirmed value not recorded", c.profilePublished)
 	}
 }
 
@@ -115,9 +111,7 @@ func TestPublishedProfileIsKeptInAccountStorage(t *testing.T) {
 	defer m.Close()
 	w := m.space("alice")
 	c := &connection{owner: w, config: NetworkConfig{ID: "net"}}
-	c.recordSentProfile(&girc.Event{Command: "METADATA", Params: []string{"*", "SET", "display-name", "Alice"}})
-	c.recordSentProfile(&girc.Event{Command: "METADATA", Params: []string{"*", "SET", "avatar"}})
-	c.recordSentProfile(&girc.Event{Command: "PRIVMSG", Params: []string{"*", "SET", "bio", "x"}})
+	c.recordPublished(map[string]string{"display-name": "Alice", "avatar": ""})
 	fresh := &connection{owner: w, config: NetworkConfig{ID: "net"}}
 	if got := fresh.publishedProfile(); !maps.Equal(got, map[string]string{"display-name": "Alice", "avatar": ""}) {
 		t.Fatal("published profile not restored", got)

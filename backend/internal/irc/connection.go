@@ -80,6 +80,11 @@ type connection struct {
 	explicitCreating   map[string]bool
 	metadataJoins      map[string]map[string]string
 	metadataJoinTimer  *time.Timer
+	metadataWrites     metadataPublisher
+	metadataWake       chan struct{}
+	deviceManaged      bool         // protected by the workspace mutex
+	awayPending        []awayChange // protected by the workspace mutex
+	awayUncertain      bool         // protected by the workspace mutex
 	historyGate        chan struct{}
 	historyRequests    map[string]*historyRequest
 	historyResponses   map[string]*historyRequest
@@ -171,6 +176,7 @@ func (c *connection) writer() {
 			return
 		case <-maintenance.C:
 			c.mu.Lock()
+			c.wakeMetadataLocked(time.Now())
 			expired := []string{}
 			for id, p := range c.pending {
 				if !p.at.IsZero() && time.Since(p.at) > 15*time.Second {
@@ -186,6 +192,23 @@ func (c *connection) writer() {
 			c.owner.mu.Unlock()
 			if len(expired) != 0 {
 				c.wakeOutbox(true)
+			}
+		case <-c.metadataWake:
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			c.mu.Lock()
+			client := c.client
+			var event *girc.Event
+			if client != nil && c.transportAliveLocked() {
+				event = c.nextMetadataLocked(time.Now())
+			}
+			c.mu.Unlock()
+			if event != nil {
+				c.capture(*event, true)
+				client.Send(event)
 			}
 		case events := <-c.queue:
 			// Remove queue tracking immediately, including when cancellation
@@ -252,7 +275,6 @@ func (c *connection) writer() {
 				}
 				client.Send(event)
 				written++
-				c.recordSentProfile(event)
 			}
 			if send.clientID != "" {
 				c.finishOutboundWrite(send, written, len(events))
@@ -459,6 +481,7 @@ func (c *connection) run() {
 		c.metadataRequested = map[string]bool{}
 		c.metadataRetries = map[string]int{}
 		c.metadataSubscribed = false
+		c.metadataWrites = metadataPublisher{retryAt: c.metadataWrites.retryAt}
 		c.profileCheck = nil
 		c.profileCheckDone = false
 		c.metadataJoined = map[string]bool{}
@@ -476,6 +499,8 @@ func (c *connection) run() {
 		c.historyCallbackMu.Unlock()
 		close(attemptDone)
 		c.owner.mu.Lock()
+		c.awayPending = nil
+		c.awayUncertain = false
 		n := c.owner.networks[c.config.ID]
 		n.Features = model.Features{Metadata: []string{}}
 		n.Capabilities = []string{}

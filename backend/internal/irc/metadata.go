@@ -28,6 +28,8 @@ func (c *connection) metadata(e girc.Event) {
 	defer w.mu.Unlock()
 	v := c.member(nick, "")
 	own := v.ID == w.self.ID
+	before := v
+	changed := applyProfileMetadata(&v, key, value) && !equal(before, v)
 	if own {
 		// Reconcile GET answers together before applying them. Otherwise an old
 		// server value could overwrite an offline edit before the check sees it.
@@ -37,15 +39,20 @@ func (c *connection) metadata(e girc.Event) {
 		if checking || e.Command == "761" && e.Params[0] != "*" {
 			return
 		}
-		if isMetadataKey(key) {
-			ours := profileValues(v)[key]
+		profileKey := isMetadataKey(key)
+		ours := ""
+		if profileKey {
+			ours = profileValues(before)[key]
 			if last, known := c.publishedProfile()[key]; known && ours != last && value == last {
 				// A late echo of the previous value cannot cancel a local edit
 				// that is still waiting to be sent or reconciled.
 				return
 			}
 		}
-		if isMetadataKey(key) && profileValues(v)[key] == value {
+		if (profileKey || key == deviceKey) && c.observeOwnMetadata(key, value, changed) {
+			return
+		}
+		if profileKey && ours == value {
 			c.recordPublished(map[string]string{key: value})
 			return
 		}
@@ -53,8 +60,7 @@ func (c *connection) metadata(e girc.Event) {
 	if value != "" {
 		c.sawMetadata(e, v.ID, key)
 	}
-	before := v
-	if !applyProfileMetadata(&v, key, value) || equal(before, v) {
+	if !changed {
 		return
 	}
 	if own {

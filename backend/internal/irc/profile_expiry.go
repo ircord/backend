@@ -140,22 +140,8 @@ func (w *workspace) expireProfiles(now time.Time) time.Time {
 			retry()
 			return next
 		}
-		// An offline edit reconciles on reconnect. A live clear is sent only
-		// for values still matching this backend's publication history.
 		if c := w.connections[id]; c != nil {
-			c.mu.Lock()
-			ready := c.ready && c.profileCheckDone && c.profileCheck == nil
-			c.mu.Unlock()
-			if ready {
-				published, values := c.publishedProfile(), profileValues(before)
-				var safe []string
-				for _, key := range changed {
-					if last, ok := published[key]; ok && last == values[key] {
-						safe = append(safe, key)
-					}
-				}
-				c.pushProfileKeys(self, safe)
-			}
+			c.expireProfileMetadata(before, changed)
 		}
 	}
 	return next

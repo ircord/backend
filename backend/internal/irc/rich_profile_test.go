@@ -394,7 +394,7 @@ func TestRichProfileReconcileAndChangedFieldPublication(t *testing.T) {
 	c := profileConnection(m, "alice", "one")
 	c.recordPublished(map[string]string{"ircord/headline": "previous"})
 	answerProfileCheck(c, map[string]string{"ircord/headline": "another client", "ircord/languages": `["en-US"]`})
-	if len(c.queue) != 0 {
+	if len(queuedProfile(c)) != 0 {
 		t.Fatal("reconciliation overwrote a newer upstream value")
 	}
 	p, err := m.NetworkProfile("alice", "one")

@@ -118,7 +118,7 @@ func TestDeviceMetadataIsCapabilityGated(t *testing.T) {
 	w := m.space("alice")
 	plain := routingConnection(m, w)
 	m.SetDevice("alice", activity.Phone)
-	if sent := drain(plain); len(sent) != 0 {
+	if sent := queuedProfile(plain); len(sent) != 0 {
 		t.Fatalf("no metadata without draft/metadata-3, got %v", sent)
 	}
 	if m.Snapshot("alice").User.Device != "phone" {
@@ -126,17 +126,17 @@ func TestDeviceMetadataIsCapabilityGated(t *testing.T) {
 	}
 	c := routingConnection(m, w, "draft/metadata-3")
 	m.SetDevice("alice", activity.Tablet)
-	sent := drain(c)
-	if len(sent) != 1 || sent[0].Command != "METADATA" || len(sent[0].Params) != 4 || sent[0].Params[2] != deviceKey || sent[0].Params[3] != "tablet" {
+	sent := queuedProfile(c)
+	if len(sent) != 1 || sent[deviceKey] != "tablet" {
 		t.Fatalf("expected METADATA * SET ircord/device tablet, got %v", sent)
 	}
 	m.SetDevice("alice", "desktop")
-	sent = drain(c)
-	if len(sent) != 1 || len(sent[0].Params) != 3 {
+	sent = queuedProfile(c)
+	if value, present := sent[deviceKey]; len(sent) != 1 || !present || value != "" {
 		t.Fatalf("a desktop clears the key, got %v", sent)
 	}
 	m.SetDevice("alice", "")
-	if sent := drain(c); len(sent) != 0 {
+	if sent := queuedProfile(c); len(sent) != 0 {
 		t.Fatalf("an unchanged device is not sent again, got %v", sent)
 	}
 
@@ -322,6 +322,40 @@ func awayProfileFixture(t *testing.T) (*Manager, *connection, Conversation) {
 		w.configs[network], w.networks[network] = cfg, n
 	}
 	return m, c, conv
+}
+
+func TestExplicitAwaySkipsConfirmedAndPendingValues(t *testing.T) {
+	m, c, _ := awayProfileFixture(t)
+	setAway := func(reason string) {
+		t.Helper()
+		if err := m.SetAway("alice", c.config.ID, reason); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setAway("")
+	if sent := drain(c); len(sent) != 0 {
+		t.Fatal("back online while already online sent AWAY", sent)
+	}
+	setAway("Lunch")
+	setAway("Lunch")
+	setAway("")
+	setAway("")
+	sent := drain(c)
+	if len(sent) != 2 || sent[0].Last() != "Lunch" || len(sent[1].Params) != 0 {
+		t.Fatal("a pending away or clear was lost or duplicated", sent)
+	}
+	c.receive(nil, *girc.ParseEvent(":server.example 306 Alice :Away"))
+	if got, _ := m.NetworkProfile("alice", c.config.ID); got.AwayMessage != "Lunch" {
+		t.Fatal("an older reply took the pending clear as its reason", got.AwayMessage)
+	}
+	c.receive(nil, *girc.ParseEvent(":server.example 305 Alice :Back"))
+	setAway("")
+	if err := m.RawCommand("alice", c.config.ID, "back", "AWAY"); err != nil {
+		t.Fatal(err)
+	}
+	if sent := drain(c); len(sent) != 0 {
+		t.Fatal("a confirmed clear was repeated", sent)
+	}
 }
 
 // /afk and /brb (#240) are plain IRC AWAY: the text shows on your own presence once the server

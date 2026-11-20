@@ -113,25 +113,65 @@ func (m *Manager) applyAutoAway(w *workspace, network string, c *connection) {
 	}
 	switch {
 	case w.autoAway && !w.autoAwaySent[network] && !w.awayOn[network]:
-		if c.enqueue(&girc.Event{Command: "AWAY", Params: []string{autoAwayReason}}) == nil {
+		if c.enqueueAway(awayEvent(autoAwayReason)) == nil {
 			w.autoAwaySent[network] = true
-			w.setAwayText(network, autoAwayReason)
 		}
 	case !w.autoAway && w.autoAwaySent[network]:
-		delete(w.autoAwaySent, network)
-		_ = c.enqueue(&girc.Event{Command: "AWAY"})
+		if c.enqueueAway(awayEvent("")) == nil {
+			delete(w.autoAwaySent, network)
+		}
 	}
 }
 
-// manualAway records that the user set or cleared away on a network themselves, so coming back
-// does not clear an away they chose.
-// reason is the AWAY text sent ("" clears away).
-func (m *Manager) manualAway(owner, network, reason string) {
-	w := m.space(owner)
-	w.mu.Lock()
-	delete(w.autoAwaySent, network)
-	w.setAwayText(network, reason)
-	w.mu.Unlock()
+type awayChange struct {
+	reason   string
+	deadline time.Time
+}
+
+func awayEvent(reason string) *girc.Event {
+	event := &girc.Event{Command: "AWAY"}
+	if reason != "" {
+		event.Params = []string{reason}
+	}
+	return event
+}
+
+// AWAY replies arrive in command order, and the 306 reply omits the reason.
+// These methods run under the workspace mutex along with all AWAY senders.
+func (c *connection) pruneAwayChanges() {
+	now := time.Now()
+	for len(c.awayPending) > 0 && !now.Before(c.awayPending[0].deadline) {
+		c.awayPending = c.awayPending[1:]
+		c.awayUncertain = true
+	}
+}
+
+func (c *connection) enqueueAway(event *girc.Event) error {
+	c.pruneAwayChanges()
+	if len(c.awayPending) >= cap(c.queue) {
+		return ErrBusy
+	}
+	if err := c.enqueue(event); err != nil {
+		return err
+	}
+	reason := ""
+	if len(event.Params) > 0 {
+		reason = event.Last()
+	}
+	c.awayPending = append(c.awayPending, awayChange{reason: reason, deadline: time.Now().Add(15 * time.Second)})
+	c.owner.setAwayText(c.config.ID, reason)
+	return nil
+}
+
+func (c *connection) awayReplyReason(away bool) string {
+	c.pruneAwayChanges()
+	c.awayUncertain = false
+	if len(c.awayPending) > 0 && (c.awayPending[0].reason != "") == away {
+		reason := c.awayPending[0].reason
+		c.awayPending = c.awayPending[1:]
+		return reason
+	}
+	return c.owner.awayText[c.config.ID]
 }
 
 // briefAwayText matches the AWAY text /afk and /brb send: "AFK" or "BRB", optionally followed
@@ -153,16 +193,12 @@ func (w *workspace) setAwayText(network, reason string) {
 
 // endBriefAway clears an /afk or /brb away on a network once the user sends a message there,
 // the way coming back ends an automatic away. Any other away stays until /back.
-func (m *Manager) endBriefAway(owner, network string, c *connection) {
-	w := m.space(owner)
+func (c *connection) endBriefAway() {
+	w := c.owner
 	w.mu.Lock()
-	brief := w.briefAway[network]
-	if brief {
-		w.setAwayText(network, "")
-	}
-	w.mu.Unlock()
-	if brief {
-		_ = c.enqueue(&girc.Event{Command: "AWAY"})
+	defer w.mu.Unlock()
+	if w.briefAway[c.config.ID] {
+		_ = c.enqueueAway(awayEvent(""))
 	}
 }
 
@@ -192,19 +228,18 @@ func (m *Manager) SetDevice(owner, formFactor string) {
 }
 
 // publishDevice shares the form factor on a connection that negotiated draft/metadata-3.
+// The workspace mutex orders changes against a new attempt's presence sync.
 func (c *connection) publishDevice(formFactor string) {
-	if !c.has("draft/metadata-3") {
-		return
+	c.deviceManaged = true
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ready && c.caps["draft/metadata-3"] {
+		c.queueMetadataLocked(deviceKey, formFactor)
 	}
-	params := []string{"*", "SET", deviceKey}
-	if formFactor != "" {
-		params = append(params, formFactor)
-	}
-	_ = c.enqueue(&girc.Event{Command: "METADATA", Params: params})
 }
 
-// resumePresence re-applies automatic away and the device on a new connection: away and
-// metadata do not survive reconnecting.
+// resumePresence re-applies automatic away and checks the desired device
+// against the server's metadata on the new connection.
 func (c *connection) resumePresence() {
 	w := c.owner
 	w.mu.Lock()
@@ -212,17 +247,16 @@ func (c *connection) resumePresence() {
 	// A new connection starts present, whatever the last one was.
 	delete(w.awayOn, c.config.ID)
 	if w.autoAway {
-		if c.enqueue(&girc.Event{Command: "AWAY", Params: []string{autoAwayReason}}) == nil {
+		if c.enqueueAway(awayEvent(autoAwayReason)) == nil {
 			if w.autoAwaySent == nil {
 				w.autoAwaySent = map[string]bool{}
 			}
 			w.autoAwaySent[c.config.ID] = true
-			w.setAwayText(c.config.ID, autoAwayReason)
 		}
 	} else if w.autoAwaySent != nil {
 		delete(w.autoAwaySent, c.config.ID)
 	}
-	if w.device != "" {
+	if w.device != "" || c.deviceManaged {
 		c.publishDevice(w.device)
 	}
 }

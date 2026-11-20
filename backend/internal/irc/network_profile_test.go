@@ -25,25 +25,17 @@ func profileConnection(m *Manager, owner, network string) *connection {
 }
 
 func queuedProfile(c *connection) map[string]string {
-	values := map[string]string{}
-	for len(c.queue) > 0 {
-		for _, e := range <-c.queue {
-			if e.Command == "METADATA" && len(e.Params) >= 3 && e.Params[1] == "SET" {
-				value := ""
-				if len(e.Params) > 3 {
-					value = e.Params[3]
-				}
-				values[e.Params[2]] = value
-			}
-		}
-	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	values := c.metadataWrites.pending
+	c.metadataWrites.pending = nil
 	return values
 }
 
 func answerProfileCheck(c *connection, values map[string]string) {
 	c.checkPublishedProfile()
 	<-c.queue // GET
-	for _, key := range metadataKeys {
+	for _, key := range subscribedKeys() {
 		line := fmt.Sprintf(":irc.test 766 %s %s %s :Key is not set", c.config.Nick, c.config.Nick, key)
 		if value := values[key]; value != "" {
 			line = fmt.Sprintf(":irc.test 761 %s %s %s * :%s", c.config.Nick, c.config.Nick, key, value)
@@ -100,7 +92,7 @@ func TestNetworkProfileEditsPublishOnlyTheirServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{"display-name": "One Name", "avatar": testAvatar, "bio": "One bio", "color": "#abcdef"}
-	if !maps.Equal(queuedProfile(one), want) || len(two.queue) != 0 {
+	if !maps.Equal(queuedProfile(one), want) || len(queuedProfile(two)) != 0 {
 		t.Fatal("profile was not published only on its server")
 	}
 	if p.ID != self.ID || !equal(m.Self("alice"), self) {
@@ -113,7 +105,7 @@ func TestNetworkProfileEditsPublishOnlyTheirServer(t *testing.T) {
 	if _, err := m.SetProfile("alice", Profile{DisplayName: profileName("Legacy local"), Bio: "legacy"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(one.queue) != 0 || len(two.queue) != 0 {
+	if len(queuedProfile(one)) != 0 || len(queuedProfile(two)) != 0 {
 		t.Fatal("legacy account edit broadcast to IRC")
 	}
 	if got, _ := m.NetworkProfile("alice", "one"); !maps.Equal(profileValues(got), want) {
@@ -271,11 +263,11 @@ func TestNetworkProfileOwnMetadataAndRestartStayIsolated(t *testing.T) {
 		c.metadata(*girc.ParseEvent(fmt.Sprintf(":irc.test METADATA onenick %s * :%s", key, value)))
 	}
 	p, _ := m.NetworkProfile("alice", "one")
-	if !maps.Equal(profileValues(p), values) || len(c.queue) != 0 {
+	if !maps.Equal(profileValues(p), values) || len(queuedProfile(c)) != 0 {
 		t.Fatal("own server metadata was not learned without publication", p)
 	}
 	answerProfileCheck(c, values)
-	if len(c.queue) != 0 {
+	if len(queuedProfile(c)) != 0 {
 		t.Fatal("reconnect published unchanged remote metadata")
 	}
 	m.Close()
@@ -294,7 +286,7 @@ func TestNetworkProfileOwnMetadataAndRestartStayIsolated(t *testing.T) {
 	c = profileConnection(fresh, "alice", "one")
 	values["display-name"] = "Newer elsewhere"
 	answerProfileCheck(c, values)
-	if len(c.queue) != 0 {
+	if len(queuedProfile(c)) != 0 {
 		t.Fatal("a reconnect replaced another backend's edit")
 	}
 	c.ready = false
@@ -341,7 +333,7 @@ func TestNetworkProfileLegacyMigrationIsIndependentAndNeverPublishes(t *testing.
 		t.Fatal("legacy profile was imported more than once")
 	}
 	answerProfileCheck(c, nil)
-	if len(c.queue) != 0 {
+	if len(queuedProfile(c)) != 0 {
 		t.Fatal("restart forgot that migration is not publication intent")
 	}
 	if _, err := fresh.SetNetworkProfile("alice", "one", Profile{DisplayName: profileName("Changed one"), Bio: first.Bio, AvatarURL: &first.AvatarURL, NameColor: &first.NameColor}); err != nil {
@@ -486,7 +478,7 @@ func TestNetworkProfileCanLearnLiveMetadataAfterCheckTimeout(t *testing.T) {
 		defer c.mu.Unlock()
 		return c.profileCheckDone
 	})
-	if len(c.queue) != 0 {
+	if len(queuedProfile(c)) != 0 {
 		t.Fatal("an incomplete check published metadata")
 	}
 	c.metadata(*girc.ParseEvent(":irc.test METADATA onenick display-name * :Live upstream name"))

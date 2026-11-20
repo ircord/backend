@@ -21,6 +21,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 ### Fixed
 
 - Messages stay in your outbox through reloads and reconnects until the server confirms them or you remove them.
+- IRCord keeps your device indicator through quick reloads and retries profile changes when the server asks it to wait.
 - Switching servers returns to the last channel you viewed there, even after reloading IRCord.
 - Keyboard shortcuts such as Ctrl/⌘ G for GIFs, and typing anywhere to start a message, work again.
 - Link previews draw their generated graphics again; the page's security settings had blocked them.

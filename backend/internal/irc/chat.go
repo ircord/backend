@@ -467,6 +467,6 @@ func (m *Manager) dispatchSend(owner string, input SendInput, expected *connecti
 		expectReply: c.caps["echo-message"] || label != "",
 	}
 	c.mu.Unlock()
-	m.endBriefAway(owner, conv.NetworkID, c)
+	c.endBriefAway()
 	return nil
 }

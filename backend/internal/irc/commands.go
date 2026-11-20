@@ -55,13 +55,6 @@ func (m *Manager) RawCommand(owner, network, clientID, line string) error {
 	if err = c.denyPartyCommand(event); err != nil {
 		return err
 	}
-	if event.Command == "AWAY" {
-		reason := ""
-		if len(event.Params) > 0 {
-			reason = event.Last()
-		}
-		m.manualAway(owner, network, reason)
-	}
 	if event.Command == "NICK" {
 		c.owner.mu.Lock()
 		maximum := c.nicknameLimit()
@@ -92,11 +85,14 @@ func (m *Manager) RawCommand(owner, network, clientID, line string) error {
 	} else if event.Command == "CHATHISTORY" {
 		return c.enqueueRawHistory(event, clientID)
 	}
+	if event.Command == "AWAY" {
+		return c.setAway(event)
+	}
 	if err := c.enqueue(event); err != nil {
 		return err
 	}
 	if event.Command == "PRIVMSG" {
-		m.endBriefAway(owner, network, c)
+		c.endBriefAway()
 	}
 	return nil
 }

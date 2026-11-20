@@ -23,14 +23,19 @@ func profileChecked(t *testing.T, m *Manager, owner string) {
 	flushed(t, m, owner)
 }
 
-// flushed sends a PING through the connection's own FIFO queue and waits for its PONG, so every
-// line queued before it, such as profile SETs, has been processed by the server.
+// flushed waits for profile and device SET replies, then for the server to
+// process the queued commands preceding a PING.
 func flushed(t *testing.T, m *Manager, owner string) {
 	t.Helper()
 	c, err := m.connection(owner, "net")
 	if err != nil {
 		t.Fatal(err)
 	}
+	eventually(t, func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return len(c.metadataWrites.pending) == 0 && c.metadataWrites.inFlight == nil
+	})
 	c.mu.Lock()
 	client := c.client
 	c.mu.Unlock()
