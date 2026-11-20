@@ -54,19 +54,29 @@ function run(item: MenuItem | { action: () => void }, event: Event) {
   close()
   item.action?.()
 }
+/** Phones get the same menu as a sheet from the bottom. */
+const phone = useMediaQuery('(max-width: 700px)')
 const dismiss = () => close(false)
+// A phone keyboard closing changes only the height; that must not close the sheet.
+let width = 0
+function resize() {
+  if (window.innerWidth !== width) dismiss()
+  width = window.innerWidth
+}
 onMounted(() => {
+  width = window.innerWidth
   window.addEventListener('blur', dismiss)
-  window.addEventListener('resize', dismiss)
+  window.addEventListener('resize', resize)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('blur', dismiss)
-  window.removeEventListener('resize', dismiss)
+  window.removeEventListener('resize', resize)
 })
 </script>
 <template>
+  <MenuSheet v-if="phone && state.open" />
   <UiDropdownMenu
-    :open="state.open"
+    :open="state.open && !phone"
     :modal="false"
     @update:open="openChange"
   >

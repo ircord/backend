@@ -714,6 +714,7 @@ export function useMenus() {
         }),
         action: () => void reactWith(m, item),
       })),
+      stripFormatting(m.text).trim().split('\n')[0]!.slice(0, 200),
     )
   }
 

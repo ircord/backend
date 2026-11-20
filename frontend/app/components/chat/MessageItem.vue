@@ -392,7 +392,7 @@ function react(item: EmojiItem) {
       <div class="message-body min-w-0 col-start-2">
         <div
           v-if="!grouped"
-          class="message-meta flex items-baseline gap-2 min-w-0 [@media(hover:none)_and_(max-width:700px)]:pr-7"
+          class="message-meta flex items-baseline gap-2 min-w-0"
         >
           <button
             class="author-name text-[15px] font-[600] leading-[1.375] overflow-hidden text-ellipsis whitespace-nowrap max-w-full hover:underline"
@@ -478,11 +478,12 @@ function react(item: EmojiItem) {
         <div dir="auto"><MessageContent :text="version.text" /></div>
       </li>
     </ol>
+    <!-- On touch screens a long-press opens the menu; the button stays for screen readers. -->
     <UiButton
       v-if="!message.delivery"
       variant="ghost"
       size="icon-sm"
-      class="mobile-message-menu hidden absolute right-1 top-0 text-faint [@media(hover:none)]:flex"
+      class="mobile-message-menu hidden sr-only [@media(hover:none)]:flex"
       :aria-label="t('workspaceUi.message.actions')"
       aria-haspopup="menu"
       @click="messageMenu($event.currentTarget as HTMLElement)"

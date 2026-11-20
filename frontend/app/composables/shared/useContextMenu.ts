@@ -27,6 +27,8 @@ interface MenuState {
   x: number
   y: number
   title: string
+  /** A line under the title on phones: what the menu is about (a message's text). */
+  detail: string
   items: MenuEntry[]
   quick: QuickAction[]
   /** Element to return focus to when the menu closes. */
@@ -37,6 +39,7 @@ const state = reactive<MenuState>({
   x: 0,
   y: 0,
   title: '',
+  detail: '',
   items: [],
   quick: [],
   returnFocus: null,
@@ -60,6 +63,7 @@ export function useContextMenu() {
     items: MenuEntry[],
     title = '',
     quick: QuickAction[] = [],
+    detail = '',
   ) {
     const entries = items.filter(
       (item, i, all) => item !== '-' || (i > 0 && all[i - 1] !== '-' && i < all.length - 1),
@@ -93,6 +97,7 @@ export function useContextMenu() {
     }
     state.items = entries
     state.title = title
+    state.detail = detail
     state.quick = quick
     state.open = true
   }
@@ -104,6 +109,7 @@ export function useContextMenu() {
     state.items = []
     state.quick = []
     state.title = ''
+    state.detail = ''
     if (restoreFocus && target?.isConnected) target.focus()
   }
   /** A press outside the menu: remembers when it landed on the menu's own button. */

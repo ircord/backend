@@ -12,6 +12,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 - On phones, Settings opens on its list of sections, and each section fills the screen under a slim bar with Back. Sliders and choices sit under their names instead of squeezing them. Administration and channel settings work the same way, and every section in all three now has a colored icon.
 - On phones, swipe right anywhere in a conversation to open the conversation list. It follows your finger, and a swipe left closes it.
 - On phones, swipe a message to the left to reply to it. Once the reply icon settles and your phone ticks, let go to reply.
+- On phones, menus slide up from the bottom with large buttons and quick reactions. Press and hold a message to open its menu, and drag the menu down or tap outside it to close it.
 
 ### Fixed
 
