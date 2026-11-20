@@ -4,7 +4,8 @@ import { localSpeechConnectSources } from '../../shared/local-speech'
 
 /**
  * Content-Security-Policy for the app page. Inline scripts (the appearance boot script and
- * Nuxt's config payload) are allowed by hash, so injected markup cannot run script. Styles allow
+ * Nuxt's config payload) are allowed by hash, so injected markup cannot run script; eval stays
+ * blocked, WebAssembly may compile. Styles allow
  * inline because themes and Vue style bindings set them. Development is skipped: Vite's HMR needs
  * looser rules. A signed-in user's read-aloud service origin is added to connect-src on their own
  * page only. Hugging Face is added for read-aloud's voice model unless the operator switched it
@@ -40,7 +41,9 @@ export default defineNitroPlugin((nitroApp) => {
       .map((code) => `'sha256-${createHash('sha256').update(code).digest('base64')}'`)
     const policy = [
       "default-src 'self'",
-      `script-src 'self' ${hashes.join(' ')}`,
+      // Link-preview graphics lay out with Satori's WebAssembly engine; this allows compiling
+      // WebAssembly, not JavaScript eval.
+      `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(' ')}`,
       "style-src 'self' 'unsafe-inline'",
       // Stored media, link cards, GIFs and custom emotes can use external image hosts. Profile
       // pictures are limited to this instance in the client (useInstanceImage), not here.

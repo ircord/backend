@@ -596,18 +596,7 @@ try {
     await page.keyboard.press('Escape')
     await expect(commandEditor).toHaveCount(0)
   }
-  // The production demo also starts the unrelated offline SQLite worker. Its current CSP
-  // blocks WebAssembly compilation; retain that finding without masking other page errors.
-  const offlineCsp = errors.filter(
-    (error) =>
-      error.includes('WebAssembly.instantiate()') && error.includes('Content Security policy'),
-  )
-  assert.deepEqual(
-    errors.filter((error) => !offlineCsp.includes(error)),
-    [],
-  )
-  if (offlineCsp.length)
-    console.warn('Separate offline-worker CSP errors observed:', offlineCsp.length)
+  assert.deepEqual(errors, [])
   console.log(
     'Command browser checks passed: typed arguments, nickname/channel/server-emoji completion, secrets, retry, status/menu/away, drafts/replies, and phone layout.',
   )
