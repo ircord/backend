@@ -710,10 +710,11 @@ onBeforeUnmount(() => document.removeEventListener('copy', onCopy))
         <p>{{ errorText(history.error.value, t) }}</p>
         <UiButton @click="history.refetch()"> {{ t('common.tryAgain') }} </UiButton>
       </div>
+      <!-- The bottom padding is room for the composer's typing line, so it never covers a message. -->
       <MessageScrollerContent
         v-else
         :key="chat.activeId"
-        class="timeline-rows flow-root min-h-full pt-2 pr-0 pb-4 pl-0"
+        class="timeline-rows flow-root min-h-full pt-2 pr-0 pb-6 pl-0"
         role="log"
         aria-live="off"
       >

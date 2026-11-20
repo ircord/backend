@@ -24,6 +24,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 - Switching servers returns to the last channel you viewed there, even after reloading IRCord.
 - Keyboard shortcuts such as Ctrl/⌘ G for GIFs, and typing anywhere to start a message, work again.
 - Link previews draw their generated graphics again; the page's security settings had blocked them.
+- "Someone is typing…" no longer covers the bottom of the last message.
 - A second click on a menu button, such as the three-dot options button, now closes its menu instead of opening it again.
 - On phones, choice lists in commands, such as when a status clears, now open next to the field instead of in the middle of the screen.
 
