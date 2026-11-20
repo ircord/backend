@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -31,15 +32,25 @@ type EmoteImport struct {
 	Aliases    []string `json:"aliases,omitempty" maxItems:"8"`
 }
 
-// canManageEmotes applies IRCORD_EMOTE_MANAGERS: account usernames, or * for every account.
+// canManageEmotes applies the catalog policy from Administration: every signed-in account
+// manages every entry, unless an owner limited that to a list of accounts. Owners always can.
 func (s *Server) canManageEmotes(ctx context.Context) bool {
-	name := strings.ToLower(principal(ctx).Account.Username)
-	for _, allowed := range s.options.EmoteManagers {
-		if allowed == "*" || name != "" && allowed == name {
-			return true
-		}
+	if owner(ctx) == "" {
+		return false
 	}
-	return false
+	policy := s.options.Emotes.Policy()
+	if !policy.Restricted {
+		return true
+	}
+	id := principal(ctx).Account.ID
+	if id == "" {
+		return false
+	}
+	if slices.Contains(policy.Managers, id) {
+		return true
+	}
+	isOwner, err := s.options.Store.IsOwner(id)
+	return err == nil && isOwner
 }
 func emoteError(err error) error {
 	var detail *emotes.Error

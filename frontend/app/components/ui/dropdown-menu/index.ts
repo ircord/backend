@@ -12,8 +12,9 @@ export { default as DropdownMenuSubTrigger } from './DropdownMenuSubTrigger.vue'
 export { default as DropdownMenuTrigger } from './DropdownMenuTrigger.vue'
 
 // A raised panel with a quiet edge and a top highlight, so menus lift off the conversation.
+// Above dialogs (z-[70]), like selects: a menu opened inside one must show over it.
 export const dropdownMenuContentClass =
-  'dropdown-menu-panel z-60 min-w-56 max-w-72 max-h-[var(--reka-dropdown-menu-content-available-height)] overflow-y-auto rounded-lg border border-solid border-[color-mix(in_srgb,var(--border)_80%,transparent)] bg-popover p-1.5 text-popover-foreground shadow-[var(--shadow),inset_0_1px_0_color-mix(in_srgb,var(--text)_6%,transparent)] outline-none'
+  'dropdown-menu-panel z-[80] min-w-56 max-w-72 max-h-[var(--reka-dropdown-menu-content-available-height)] overflow-y-auto rounded-lg border border-solid border-[color-mix(in_srgb,var(--border)_80%,transparent)] bg-popover p-1.5 text-popover-foreground shadow-[var(--shadow),inset_0_1px_0_color-mix(in_srgb,var(--text)_6%,transparent)] outline-none'
 
 // Highlight is a soft accent tint, with the icon taking the accent, rather than a solid fill.
 export const dropdownMenuItemVariants = cva(

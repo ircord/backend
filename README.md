@@ -144,21 +144,17 @@ Every account on one IRCord backend shares a custom emote catalog (Settings → 
 **Server emoji** in the picker). Messages carry the readable `:shortcode:`, so other IRC
 clients and other IRCord deployments see the name as text; only this backend's users see images.
 
-- Signed-in users can upload images or import provider emoji. They can rename, disable,
-  or remove their own additions.
-- `IRCORD_EMOTE_MANAGERS` lists account usernames (comma-separated) that can manage every
-  entry, including seeds and other users' additions. `*` grants this permission to every account.
-  When unset, users can manage only their own additions.
+- Signed-in users can upload images or import provider emoji. By default every signed-in
+  account can rename, disable, or remove every entry.
+- Server owners can limit that in **Administration → Emoji** to a list of accounts. Owners and
+  the listed accounts then manage every entry; everyone else manages only their own additions.
 - **Server emoji** lists installed entries. **Discover** browses and searches emoji.gg's public
   website with animation filters. The shared preview shows the image, shortcode, aliases, and normal chat size
   before adding. Paste-link imports from 7TV and FrankerFaceZ remain available.
 - Go caches discovery metadata and returns bounded pages. Previews load through an authenticated
   endpoint with bounded downloads and still frames when animation is off. Provider failures do
   not prevent custom uploads or use of installed emoji. Imports retain source and creator attribution.
-- On first start the backend imports a small seed set from pinned provider IDs (`:kekw:`,
-  `:kekl:`, `:kekleo:`, `:oooo:`, `:notlikethis:`), retrying in the background if a provider is
-  down. Each seed is applied once, so a removed seed stays removed. `IRCORD_EMOTE_SEED=false`
-  skips it.
+- A new backend starts with an empty catalog.
 - Images are validated (PNG, GIF, WebP or JPEG, at most 1 MiB and 1024×1024) and copied into the
   configured file storage (`local` or `s3`; the local uploads directory when file hosting is
   disabled). They belong to the instance, not the uploader. Chat messages use these stored assets.

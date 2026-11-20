@@ -123,6 +123,7 @@ type Service struct {
 	mu        sync.Mutex
 	items     map[string]*record
 	version   int64
+	policy    Policy
 	subsMu    sync.Mutex
 	subs      map[chan int64]struct{}
 	lookups   lookups
@@ -169,6 +170,9 @@ CREATE TABLE IF NOT EXISTS emote_state(key TEXT PRIMARY KEY,value TEXT NOT NULL)
 	if err = options.Store.DB.QueryRow("SELECT value FROM emote_state WHERE key='version'").Scan(&version); err == nil {
 		s.version, _ = strconv.ParseInt(version, 10, 64)
 	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err = s.loadPolicy(); err != nil {
 		return nil, err
 	}
 	rows, err := options.Store.DB.Query("SELECT payload, added_by FROM emotes")

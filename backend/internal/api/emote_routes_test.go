@@ -25,7 +25,12 @@ import (
 )
 
 // emoteApp is an authenticated backend whose emote catalog lets managers (usernames) change it.
-func emoteApp(t *testing.T, managers func(*Options)) (*httptest.Server, *emotes.Service) {
+func emoteApp(t *testing.T) (*httptest.Server, *emotes.Service) {
+	server, catalog, _ := emoteAppWithStore(t)
+	return server, catalog
+}
+
+func emoteAppWithStore(t *testing.T) (*httptest.Server, *emotes.Service, *storage.Store) {
 	t.Helper()
 	store, err := storage.Open(t.TempDir())
 	if err != nil {
@@ -49,12 +54,10 @@ func emoteApp(t *testing.T, managers func(*Options)) (*httptest.Server, *emotes.
 		}
 		return files.DeleteAccount(context.Background(), owner)
 	}})
-	options := Options{Store: store, Files: files, Auth: service, Emotes: catalog}
-	managers(&options)
-	server.Config.Handler = New(manager, options).Handler
+	server.Config.Handler = New(manager, Options{Store: store, Files: files, Auth: service, Emotes: catalog}).Handler
 	server.Start()
 	t.Cleanup(func() { service.Close(); manager.Close(); server.Close(); store.Close() })
-	return server, catalog
+	return server, catalog, store
 }
 
 func uploadEmote(t *testing.T, client *http.Client, base string, fields map[string]string, status int) emotes.Emote {
@@ -93,12 +96,18 @@ func catalogOf(t *testing.T, client *http.Client, base string) emotes.EmoteCatal
 
 func TestEmoteManagementIsPermittedAndSharedAcrossAccounts(t *testing.T) {
 	adminClient, memberClient := cookieClient(), cookieClient()
-	server, _ := emoteApp(t, func(o *Options) { o.EmoteManagers = []string{"emoteboss"} })
+	server, catalog := emoteApp(t)
 	admin := testAccount{Username: "EmoteBoss", Password: "correct-horse-battery"}
 	if err := json.Unmarshal(request(t, adminClient, "POST", server.URL+"/api/v1/auth/signup", admin.credentials(), 201), &admin.LoginResult); err != nil {
 		t.Fatal(err)
 	}
 	register(t, memberClient, server.URL)
+	if !catalogOf(t, memberClient, server.URL).CanManage {
+		t.Fatal("without a manager list every account manages the catalog")
+	}
+	if err := catalog.SetPolicy(emotes.Policy{Restricted: true, Managers: []string{admin.Account.ID}}); err != nil {
+		t.Fatal(err)
+	}
 
 	if c := catalogOf(t, memberClient, server.URL); c.CanManage || !c.CanAdd || len(c.Items) != 0 {
 		t.Fatalf("member catalog: %+v", c)
@@ -204,10 +213,46 @@ func TestEmoteManagementIsPermittedAndSharedAcrossAccounts(t *testing.T) {
 	}
 }
 
-func TestEveryAccountMayManageWithWildcard(t *testing.T) {
-	server, _ := emoteApp(t, func(o *Options) { o.EmoteManagers = []string{"*"} })
-	client := cookieClient()
+func TestOwnersLimitEmojiManagementToAList(t *testing.T) {
+	server, _, store := emoteAppWithStore(t)
+	ownerClient, managerClient, otherClient := cookieClient(), cookieClient(), cookieClient()
+	owner := register(t, ownerClient, server.URL)
+	manager := register(t, managerClient, server.URL)
+	register(t, otherClient, server.URL)
+	path := server.URL + administrationPrefix + "/emoji"
+	limit := map[string]any{"restricted": true, "managers": []string{manager.Account.ID}}
+
+	request(t, otherClient, "GET", path, nil, 403)
+	request(t, otherClient, "PUT", path, limit, 403)
+	if err := store.GrantOwner(owner.Account.ID, storage.OwnerFromOperator, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	request(t, ownerClient, "PUT", path, map[string]any{"restricted": true, "managers": []string{"nobody"}}, 422)
+	var got EmojiManagement
+	if err := json.Unmarshal(request(t, ownerClient, "PUT", path, limit, 200), &got); err != nil || !got.Restricted || len(got.Managers) != 1 || got.Managers[0].Username != manager.Username {
+		t.Fatalf("saved policy: %+v %v", got, err)
+	}
+	for client, want := range map[*http.Client]bool{ownerClient: true, managerClient: true, otherClient: false} {
+		if catalogOf(t, client, server.URL).CanManage != want {
+			t.Fatalf("restricted catalog: manage should be %v", want)
+		}
+	}
+	request(t, ownerClient, "PUT", path, map[string]any{"restricted": false, "managers": []string{manager.Account.ID}}, 200)
+	if !catalogOf(t, otherClient, server.URL).CanManage {
+		t.Fatal("opening management back up did not apply")
+	}
+}
+
+func TestEveryAccountManagesUnlessRestricted(t *testing.T) {
+	server, _ := emoteApp(t)
+	creator, client := cookieClient(), cookieClient()
+	register(t, creator, server.URL)
 	register(t, client, server.URL)
+	theirs := uploadEmote(t, creator, server.URL, map[string]string{"shortcode": "theirs"}, 201)
+	if c := catalogOf(t, client, server.URL); len(c.Items) != 1 || !c.Items[0].CanManage {
+		t.Fatalf("another account's emote is not manageable: %+v", c.Items)
+	}
+	request(t, client, "DELETE", server.URL+"/api/v1/emotes/"+theirs.ID, nil, 204)
 	e := uploadEmote(t, client, server.URL, map[string]string{"shortcode": "party"}, 201)
 	request(t, client, "PATCH", server.URL+"/api/v1/emotes/"+e.ID, map[string]any{"shortcode": "x"}, 422)
 	request(t, client, "DELETE", server.URL+"/api/v1/emotes/"+e.ID, nil, 204)

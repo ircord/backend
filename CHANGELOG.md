@@ -13,6 +13,9 @@ What changed for people using IRCord, newest release first. Each release lists w
 - On phones, swipe right anywhere in a conversation to open the conversation list. It follows your finger, and a swipe left closes it.
 - On phones, swipe a message to the left to reply to it. Once the reply icon settles and your phone ticks, let go to reply.
 - On phones, menus slide up from the bottom with large buttons and quick reactions. Press and hold a message to open its menu, and drag the menu down or tap outside it to close it.
+- Everyone signed in can now rename, disable and remove any server emoji. Server owners can limit this to chosen accounts in Administration → Emoji.
+- New servers start with no emoji, instead of five built-in ones.
+- Each emoji in Settings → Emotes has a menu with Rename, Edit aliases, Disable and Remove.
 
 ### Fixed
 

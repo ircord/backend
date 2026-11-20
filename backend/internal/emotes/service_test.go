@@ -161,15 +161,16 @@ func read(t *testing.T, s *Service, url string) (string, []byte) {
 	return mime, data
 }
 
-func TestSeedsImportPinnedProviderEmotesOnce(t *testing.T) {
+func TestProviderImportsKeepAttributionAndStillFrames(t *testing.T) {
 	f := newFixture(t)
 	f.sevenTV(t, "01GA29CZ2R000C36HNE7Z0DQXD", "KEKW", "moecoquito", false)
 	f.sevenTV(t, "01HGXBVKPR00025ZBQF6KKY8YD", "OOOO", "ThePurpleAxel", true)
 	f.ffz(t, "481082", "NotLikeThis", "battykatty")
 	s, store, dir := newService(t, f)
-	seeds := []Seed{DefaultSeeds[0], DefaultSeeds[3], DefaultSeeds[4]}
-	if pending := s.SeedOnce(context.Background(), seeds); pending != 0 {
-		t.Fatalf("pending seeds: %d", pending)
+	for _, in := range [][3]string{{"7tv", "01GA29CZ2R000C36HNE7Z0DQXD", "kekw"}, {"7tv", "01HGXBVKPR00025ZBQF6KKY8YD", "oooo"}, {"ffz", "481082", "notlikethis"}} {
+		if _, err := s.Import(context.Background(), in[0], in[1], New{Shortcode: in[2], AddedBy: "someone"}); err != nil {
+			t.Fatalf("import %s: %v", in[2], err)
+		}
 	}
 	c := s.Catalog(false)
 	kekw, oooo, nlt := find(c, "kekw"), find(c, "oooo"), find(c, "notlikethis")
@@ -194,22 +195,20 @@ func TestSeedsImportPinnedProviderEmotesOnce(t *testing.T) {
 	if mime, _ := read(t, s, nlt.URL); mime != "image/png" {
 		t.Fatalf("ffz image type %s", mime)
 	}
-	// Seeds apply once: a removed seed stays removed, and nothing is fetched again.
 	if err := s.Delete(context.Background(), kekw.ID); err != nil {
 		t.Fatal(err)
 	}
-	before := f.requests.Load()
-	if s.SeedOnce(context.Background(), seeds) != 0 || f.requests.Load() != before {
-		t.Fatal("applied seeds were fetched again")
+	if err := s.SetPolicy(Policy{Restricted: true, Managers: []string{"a", "a", ""}}); err != nil {
+		t.Fatal(err)
 	}
-	if find(s.Catalog(false), "kekw") != nil {
-		t.Fatal("a deleted seed came back")
-	}
-	// The catalog, version and images survive a restart.
+	// The catalog, version, policy and images survive a restart.
 	version := s.Version()
 	again := openService(t, store, dir, f)
 	if again.Version() != version || len(again.Catalog(false).Items) != 2 {
 		t.Fatalf("restart lost catalog state: %d/%d", again.Version(), len(again.Catalog(false).Items))
+	}
+	if p := again.Policy(); !p.Restricted || len(p.Managers) != 1 || p.Managers[0] != "a" {
+		t.Fatalf("restart lost the management policy: %+v", p)
 	}
 	read(t, again, find(again.Catalog(false), "oooo").URL)
 }
@@ -223,9 +222,6 @@ func TestProviderFailuresLeaveTheCatalogUsable(t *testing.T) {
 	f.set("/7tv/v3/emotes/01GA29CZ2R000C36HNE7Z0DQXD", 503, []byte("down"))
 	if _, err := s.Import(context.Background(), "7tv", "01GA29CZ2R000C36HNE7Z0DQXD", New{}); !errors.Is(err, ErrProvider) {
 		t.Fatalf("outage: %v", err)
-	}
-	if s.SeedOnce(context.Background(), DefaultSeeds[:1]) != 1 {
-		t.Fatal("a failed seed must be retried")
 	}
 	// A second local server stands in for any other host: it serves a valid image, so only
 	// the host checks can reject it.
@@ -504,23 +500,6 @@ func TestGIFValidationNeverDecodesFrames(t *testing.T) {
 	}
 	if _, err := s.validate([]byte("GIF89a\x01\x00\x01\x00\x00\x00\x00\x99")); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("malformed GIF: %v", err)
-	}
-}
-
-func TestPermanentSeedFailuresAreNotRetried(t *testing.T) {
-	f := newFixture(t)
-	s, _, _ := newService(t, f)
-	seeds := []Seed{{"7tv", "01GA29CZ2R000C36HNE7Z0DQXD", "kekw"}, {"ffz", "481082", "notlikethis"}}
-	f.sevenTV(t, "01GA29CZ2R000C36HNE7Z0DQXD", "KEKW", "x", false)
-	f.set("/7tvcdn/emote/01GA29CZ2R000C36HNE7Z0DQXD/2x.webp", 200, []byte("<html>gone</html>"))
-	// The FFZ emote is missing entirely: the fixture answers 404.
-	if pending := s.SeedOnce(context.Background(), seeds); pending != 0 {
-		t.Fatalf("permanent failures are retried: %d pending", pending)
-	}
-	before := f.requests.Load()
-	s.SeedOnce(context.Background(), seeds)
-	if f.requests.Load() != before {
-		t.Fatal("a skipped seed was fetched again")
 	}
 }
 

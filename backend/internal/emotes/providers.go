@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -325,69 +324,4 @@ func (s *Service) Import(ctx context.Context, provider, id string, in New) (Emot
 		in.Name = meta.Name
 	}
 	return s.add(ctx, in, Emote{Source: provider, ProviderID: meta.ID, SourceURL: meta.SourceURL, Creator: meta.Creator, License: meta.License}, img, still)
-}
-
-// Seed is a provider emote added once to a new catalog.
-type Seed struct {
-	Provider, ID, Shortcode string
-}
-
-// DefaultSeeds are pinned provider IDs verified for issue #45. Names have many uploads, so
-// a seed never searches by name.
-var DefaultSeeds = []Seed{
-	{"7tv", "01GA29CZ2R000C36HNE7Z0DQXD", "kekw"},
-	{"7tv", "01FBFNMS380002BEVDT2R9QCDR", "kekl"},
-	{"7tv", "01FKF8QHVR000B1FXDJGM9EDWQ", "kekleo"},
-	{"7tv", "01HGXBVKPR00025ZBQF6KKY8YD", "oooo"},
-	{"ffz", "481082", "notlikethis"},
-}
-
-// SeedOnce imports each seed that was never applied. A seed counts as applied once imported
-// or once its name or provider entry already exists, so removing a seeded emote is final.
-// It returns how many seeds still need a retry because a provider failed.
-func (s *Service) SeedOnce(ctx context.Context, seeds []Seed) int {
-	pending := 0
-	for _, seed := range seeds {
-		key := "seed:" + seed.Provider + ":" + seed.ID
-		var value string
-		if s.options.Store.DB.QueryRowContext(ctx, "SELECT value FROM emote_state WHERE key=?", key).Scan(&value) == nil {
-			continue
-		}
-		_, err := s.Import(ctx, seed.Provider, seed.ID, New{Shortcode: seed.Shortcode, AddedBy: "system"})
-		outcome := "imported"
-		switch {
-		case err == nil:
-		case errors.Is(err, ErrConflict):
-			outcome = "exists"
-		case errors.Is(err, ErrNotFound), errors.Is(err, ErrInvalid):
-			// Permanent: the provider removed the emote or serves something unusable.
-			outcome = "skipped"
-			slog.Warn("Emote seed skipped", "provider", seed.Provider, "id", seed.ID, "error", err)
-		default:
-			slog.Warn("Emote seed will retry", "provider", seed.Provider, "id", seed.ID, "error", err)
-			pending++
-			continue
-		}
-		_, _ = s.options.Store.DB.ExecContext(ctx, "INSERT OR IGNORE INTO emote_state(key,value) VALUES(?,?)", key, outcome+" "+time.Now().UTC().Format(time.RFC3339))
-	}
-	return pending
-}
-
-// SeedInBackground applies seeds now and retries provider failures with backoff until
-// every seed is applied or ctx ends.
-func (s *Service) SeedInBackground(ctx context.Context, seeds []Seed) <-chan struct{} {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		delay := time.Minute
-		for s.SeedOnce(ctx, seeds) > 0 {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(delay):
-			}
-			delay = min(delay*2, 6*time.Hour)
-		}
-	}()
-	return done
 }

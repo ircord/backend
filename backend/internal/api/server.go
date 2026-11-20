@@ -36,9 +36,7 @@ type Options struct {
 	Emotes    *emotes.Service
 	Media     *linkmedia.Resolver
 	PublicURL string
-	// EmoteManagers lists the account usernames that may change the emote catalog; "*" allows every account.
-	EmoteManagers []string
-	Auth          *auth.Service
+	Auth      *auth.Service
 	// Activity routes alerts across the account's devices; nil leaves alerts to each client.
 	Activity *activity.Router
 	Store    *storage.Store

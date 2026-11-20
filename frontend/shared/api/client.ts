@@ -160,6 +160,9 @@ export function createIRCordClient(apiBase: string, options: ClientOptions = {})
           params: { path: { account }, query: { reason } },
         }),
       ),
+    administrationEmoji: () => read(client.GET('/api/v1/administration/emoji')),
+    saveEmojiManagement: (body: Schema['EmojiManagementUpdate']) =>
+      read(client.PUT('/api/v1/administration/emoji', { body })),
     administrationAudit: (limit = 30) =>
       read(client.GET('/api/v1/administration/audit', { params: { query: { limit } } })),
     // Channel guide (#258)

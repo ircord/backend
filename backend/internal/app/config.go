@@ -26,7 +26,6 @@ type config struct {
 	auth            auth.Options
 	blob            filehost.Blob
 	media           *linkmedia.Resolver
-	emoteManagers   []string
 	customCSS       bool
 	origins         []string
 	pushSubject     string
@@ -142,11 +141,6 @@ func loadConfig() (config, error) {
 	}
 	if c.uploads, err = uploadPolicy(os.Getenv); err != nil {
 		return config{}, err
-	}
-	for _, name := range strings.Split(os.Getenv("IRCORD_EMOTE_MANAGERS"), ",") {
-		if name = strings.ToLower(strings.TrimSpace(name)); name != "" {
-			c.emoteManagers = append(c.emoteManagers, name)
-		}
 	}
 	c.pushSubject = os.Getenv("IRCORD_PUSH_SUBJECT")
 	if c.pushSubject == "" && publicURL.Scheme == "https" {

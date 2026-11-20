@@ -586,47 +586,15 @@ const displayName = computed(
                   $t('emotes.by', { creator: emote.creator })
                 }}</small>
               </span>
-              <details
+              <EmoteActionsMenu
                 v-if="mayManage(emote)"
-                class="emote-actions"
-              >
-                <summary :aria-label="$t('emotes.manageAria', { shortcode: emote.shortcode })">
-                  <AppIcon
-                    name="more"
-                    :size="18"
-                    aria-hidden="true"
-                  />
-                </summary>
-                <div class="emote-action-menu">
-                  <UiButton
-                    variant="secondary"
-                    size="sm"
-                    :disabled="busy"
-                    @click="rename(emote)"
-                    >{{ $t('emotes.rename.label') }}</UiButton
-                  >
-                  <UiButton
-                    variant="secondary"
-                    size="sm"
-                    :disabled="busy"
-                    @click="editAliases(emote)"
-                    >{{ $t('emotes.aliasesButton') }}</UiButton
-                  >
-                  <AppSwitch
-                    :model-value="emote.enabled"
-                    :aria-label="$t('emotes.enableAria', { shortcode: emote.shortcode })"
-                    :disabled="busy"
-                    @update:model-value="toggle(emote)"
-                  />
-                  <UiButton
-                    variant="destructive"
-                    size="sm"
-                    :disabled="busy"
-                    @click="remove(emote)"
-                    >{{ $t('common.remove') }}</UiButton
-                  >
-                </div>
-              </details>
+                :emote="emote"
+                :busy="busy"
+                @rename="rename(emote)"
+                @aliases="editAliases(emote)"
+                @toggle="toggle(emote)"
+                @remove="remove(emote)"
+              />
             </li>
           </ul>
         </section>
@@ -1145,19 +1113,6 @@ const displayName = computed(
   text-decoration: underline;
   text-underline-offset: 0.15em;
 }
-.emote-actions summary {
-  display: grid;
-  place-items: center;
-  width: 2.25rem;
-  min-height: 2.25rem;
-  padding: 0;
-  border: 0;
-  color: var(--muted);
-}
-.emote-actions summary:hover {
-  color: var(--text);
-  background: var(--hover);
-}
 .emote-state {
   display: grid;
   justify-items: center;
@@ -1235,32 +1190,6 @@ const displayName = computed(
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   padding: 0.75rem;
-}
-.emote-actions {
-  position: relative;
-}
-.emote-actions summary {
-  cursor: pointer;
-  border-radius: 0.4rem;
-  list-style: none;
-}
-.emote-actions summary::-webkit-details-marker {
-  display: none;
-}
-.emote-action-menu {
-  position: absolute;
-  z-index: 2;
-  right: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  width: max-content;
-  max-width: min(90vw, 24rem);
-  flex-wrap: wrap;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--card);
 }
 .emote-filters {
   display: flex;

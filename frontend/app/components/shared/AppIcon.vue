@@ -98,6 +98,8 @@ import {
   Bookmark,
   BookmarkCheck,
   Inbox,
+  Eye,
+  EyeOff,
   Bot,
   ArrowDown,
   ArrowDownAZ,
@@ -222,6 +224,8 @@ const icons: Record<string, unknown> = {
   bookmarkSaved: BookmarkCheck,
   inbox: Inbox,
   bot: Bot,
+  eye: Eye,
+  eyeOff: EyeOff,
 }
 </script>
 <template>
