@@ -14,6 +14,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 ### Fixed
 
 - A second click on a menu button, such as the three-dot options button, now closes its menu instead of opening it again.
+- On phones, choice lists in commands, such as when a status clears, now open next to the field instead of in the middle of the screen.
 
 ## v0.7.0 — 2026-11-18
 

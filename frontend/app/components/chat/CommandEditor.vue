@@ -305,28 +305,28 @@ defineExpose({ focus, suggestionsOpen })
               >*</span
             ></span
           >
-          <select
+          <!-- The app's own popup, even on touch: the platform list can open away from the
+               composer on phones. -->
+          <AppSelect
             v-if="item.choices?.length"
             v-model="values[item.name]"
+            :native="false"
+            :options="
+              item.choices.map((choice) => ({
+                value: choice.value,
+                label:
+                  choice.value === 'keep' && keepLabel
+                    ? changedKeepLabel && initialChanged(item.name)
+                      ? changedKeepLabel
+                      : keepLabel
+                    : t(choice.label),
+              }))
+            "
             :data-command-argument="item.name"
             :aria-required="item.required || undefined"
-            class="min-w-0 w-full rounded-md border border-border bg-background px-2 py-1.5 text-foreground outline-none focus:border-primary [@media(pointer:coarse)]:min-h-[44px] [@media(pointer:coarse)]:text-base"
+            class="min-w-0 w-full"
             @focus="focusField(index)"
-          >
-            <option
-              v-for="choice in item.choices"
-              :key="choice.value"
-              :value="choice.value"
-            >
-              {{
-                choice.value === 'keep' && keepLabel
-                  ? changedKeepLabel && initialChanged(item.name)
-                    ? changedKeepLabel
-                    : keepLabel
-                  : t(choice.label)
-              }}
-            </option>
-          </select>
+          />
           <span
             v-else
             class="flex w-full min-w-0 items-center gap-1"
