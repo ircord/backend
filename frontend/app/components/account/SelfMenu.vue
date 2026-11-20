@@ -146,71 +146,112 @@ async function toggleAway() {
               }
             "
           >
-            <div class="flex items-center gap-2.5 px-2 py-2">
-              <UserAvatar
-                :member="displayMember"
-                size="normal"
-                presence
-              />
-              <span class="grid min-w-0 gap-0.5">
-                <strong class="truncate">{{ chat.self?.displayName || t('selfMenu.you') }}</strong>
-                <span class="truncate text-[length:var(--ui-small)] text-muted-foreground"
-                  >{{ chat.network?.name || t('selfMenu.noNetwork') }} · {{ presence }}</span
-                >
-              </span>
-            </div>
-            <UiDropdownMenuItem
-              :disabled="!chat.networkId"
-              class="my-1 rounded-md bg-secondary/55"
-              @select="openEditor"
+            <!-- Who you are here: a card above the actions, with the status inside it. -->
+            <div
+              class="mb-1.5 rounded-md bg-[linear-gradient(135deg,color-mix(in_srgb,var(--accent)_14%,transparent),color-mix(in_srgb,var(--text)_4%,transparent))] p-1.5 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--border)_55%,transparent)]"
             >
-              <AppIcon
-                name="smile"
-                :size="16"
-              /><span class="min-w-0 flex-1 truncate"
-                ><template v-if="hasStatus"
-                  ><StatusEmoji
-                    v-if="chat.self?.statusEmoji"
-                    :value="chat.self.statusEmoji"
-                  />
-                  {{ chat.self?.statusText }}</template
-                ><template v-else>{{ t('selfMenu.setStatus') }}</template></span
+              <div class="flex items-center gap-2.5 px-1 pt-1 pb-2">
+                <UserAvatar
+                  :member="displayMember"
+                  size="normal"
+                  presence
+                  class="[&_.presence]:border-popover"
+                />
+                <span class="grid min-w-0 gap-0.5">
+                  <strong class="truncate text-[length:var(--ui-text)]">{{
+                    chat.self?.displayName || t('selfMenu.you')
+                  }}</strong>
+                  <span class="truncate text-[length:var(--ui-caption)] text-muted-foreground"
+                    >{{ chat.network?.name || t('selfMenu.noNetwork') }} · {{ presence }}</span
+                  >
+                </span>
+              </div>
+              <!-- Reads like a field: the current status on one line, emoji beside the text. -->
+              <UiDropdownMenuItem
+                :disabled="!chat.networkId"
+                class="bg-popover/80 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--border)_70%,transparent)] data-highlighted:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--accent)_45%,transparent)]"
+                @select="openEditor"
               >
-            </UiDropdownMenuItem>
-            <UiDropdownMenuItem
-              v-if="hasStatus"
-              :disabled="pending"
-              @select="clearStatus"
-              >{{ t('selfMenu.clearStatus') }}</UiDropdownMenuItem
+                <span
+                  v-if="hasStatus && chat.self?.statusEmoji"
+                  class="inline-flex size-[18px] shrink-0 items-center justify-center overflow-hidden text-[16px] leading-none [&_.icon-custom-emoji]:size-[18px] [&_img]:size-[18px] [&_img]:object-contain"
+                  ><StatusEmoji :value="chat.self.statusEmoji"
+                /></span>
+                <AppIcon
+                  v-else
+                  name="smile"
+                  :size="16"
+                /><span
+                  class="min-w-0 flex-1 truncate"
+                  :class="{ 'text-muted-foreground': !hasStatus }"
+                  >{{ hasStatus ? chat.self?.statusText : t('selfMenu.setStatus') }}</span
+                ><AppIcon
+                  name="pencil"
+                  :size="13"
+                  class="opacity-60"
+                />
+              </UiDropdownMenuItem>
+              <UiDropdownMenuItem
+                v-if="hasStatus"
+                :disabled="pending"
+                class="mt-0.5"
+                @select="clearStatus"
+                ><AppIcon
+                  name="close"
+                  :size="16"
+                />{{ t('selfMenu.clearStatus') }}</UiDropdownMenuItem
+              >
+            </div>
+            <UiDropdownMenuItem @select="run(() => actions.profile('you'))"
+              ><AppIcon
+                name="user"
+                :size="16"
+              />{{ t('selfMenu.viewProfile') }}</UiDropdownMenuItem
             >
-            <UiDropdownMenuSeparator />
-            <UiDropdownMenuItem @select="run(() => actions.profile('you'))">{{
-              t('selfMenu.viewProfile')
-            }}</UiDropdownMenuItem>
-            <UiDropdownMenuItem @select="run(() => actions.settings('profile'))">{{
-              t('selfMenu.profileSettings')
-            }}</UiDropdownMenuItem>
+            <UiDropdownMenuItem @select="run(() => actions.settings('profile'))"
+              ><AppIcon
+                name="pencil"
+                :size="16"
+              />{{ t('selfMenu.profileSettings') }}</UiDropdownMenuItem
+            >
             <UiDropdownMenuItem
               :disabled="!connected || pending"
               @select="toggleAway"
-              >{{
+              ><AppIcon
+                :name="chat.self?.status === 'away' ? 'sun' : 'moon'"
+                :size="16"
+              />{{
                 chat.self?.status === 'away' ? t('selfMenu.setBack') : t('selfMenu.setAway')
               }}</UiDropdownMenuItem
             >
             <UiDropdownMenuSeparator />
-            <UiDropdownMenuItem @select="run(() => actions.settings())">{{
-              t('selfMenu.preferences')
-            }}</UiDropdownMenuItem>
-            <UiDropdownMenuItem @select="run(() => actions.settings('notifications'))">{{
-              t('selfMenu.notifications')
-            }}</UiDropdownMenuItem>
-            <UiDropdownMenuItem @select="run(() => actions.settings('account'))">{{
-              t('selfMenu.accountSettings')
-            }}</UiDropdownMenuItem>
+            <UiDropdownMenuItem @select="run(() => actions.settings())"
+              ><AppIcon
+                name="settings"
+                :size="16"
+              />{{ t('selfMenu.preferences') }}</UiDropdownMenuItem
+            >
+            <UiDropdownMenuItem @select="run(() => actions.settings('notifications'))"
+              ><AppIcon
+                name="bell"
+                :size="16"
+              />{{ t('selfMenu.notifications') }}</UiDropdownMenuItem
+            >
+            <UiDropdownMenuItem @select="run(() => actions.settings('account'))"
+              ><AppIcon
+                name="key"
+                :size="16"
+              />{{ t('selfMenu.accountSettings') }}</UiDropdownMenuItem
+            >
             <UiDropdownMenuSeparator />
-            <UiDropdownMenuItem @select="run(() => void auth.confirmLogout())">{{
-              t('common.logOut')
-            }}</UiDropdownMenuItem>
+            <UiDropdownMenuItem
+              variant="destructive"
+              @select="run(() => void auth.confirmLogout())"
+              ><AppIcon
+                name="logout"
+                :size="16"
+              />{{ t('common.logOut') }}</UiDropdownMenuItem
+            >
           </UiDropdownMenuContent>
         </UiDropdownMenu>
       </span>

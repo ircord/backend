@@ -9,6 +9,8 @@ What changed for people using IRCord, newest release first. Each release lists w
 
 - On phones, the status bar takes the top bar's color, and the top bar and conversation header are shorter, so more messages fit. Network tabs show their connection dot on the network icon, and networks without an icon get a pattern made from their name.
 
+- Menus have a new look: a raised panel, a soft highlight, icons and red danger actions. Your user menu shows your profile and status at the top.
+
 ### Fixed
 
 - A second click on a menu button, such as the three-dot options button, now closes its menu instead of opening it again.

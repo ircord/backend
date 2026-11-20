@@ -106,7 +106,7 @@ onBeforeUnmount(() => {
       </UiDropdownMenuLabel>
       <div
         v-if="state.quick.length"
-        class="context-quick flex gap-1 pt-0.5 pr-0.5 pb-1.5 pl-0.5 mb-1 border-b [border-bottom-style:solid] border-b-border"
+        class="context-quick flex gap-1 p-0.5 pb-1.5 mb-1.5 border-b [border-bottom-style:solid] border-b-[color-mix(in_srgb,var(--border)_60%,transparent)]"
       >
         <UiDropdownMenuItem
           v-for="quick in state.quick"
@@ -143,10 +143,10 @@ onBeforeUnmount(() => {
             /><span
               class="context-label flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
               >{{ item.label }}</span
-            ><span
+            ><kbd
               v-if="item.hint"
-              class="context-hint text-[11px] opacity-70"
-              >{{ item.hint }}</span
+              class="context-hint rounded-sm bg-foreground/6 px-1.5 py-px font-sans text-[11px] text-muted-foreground"
+              >{{ item.hint }}</kbd
             ><AppIcon
               name="right"
               :size="14"
@@ -252,10 +252,10 @@ onBeforeUnmount(() => {
           /><span
             class="context-label flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
             >{{ item.label }}</span
-          ><span
+          ><kbd
             v-if="item.hint"
-            class="context-hint text-[11px] opacity-70"
-            >{{ item.hint }}</span
+            class="context-hint rounded-sm bg-foreground/6 px-1.5 py-px font-sans text-[11px] text-muted-foreground"
+            >{{ item.hint }}</kbd
           ><span
             v-if="explained(item)"
             :id="reasonId(index)"
