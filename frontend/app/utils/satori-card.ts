@@ -1,4 +1,4 @@
-import satori from 'satori'
+import type satori from 'satori'
 import interRegularUrl from '@fontsource/inter/files/inter-latin-400-normal.woff?url'
 import interBoldUrl from '@fontsource/inter/files/inter-latin-700-normal.woff?url'
 
@@ -324,7 +324,9 @@ export async function renderSatoriLinkSvgDataUrl(input: SatoriLinkInput): Promis
       },
     } as unknown as SatoriElement
 
-    const svg = await satori(tree, { width: 640, height: 360, fonts })
+    // Satori and its WebAssembly layout engine load with the first poster, not with the app.
+    const { default: render } = await import('satori')
+    const svg = await render(tree, { width: 640, height: 360, fonts })
     const dataUrl = svgToDataUrl(svg)
     if (svgCache.size >= MAX_CACHE_ENTRIES) {
       const oldest = svgCache.keys().next().value
