@@ -241,7 +241,7 @@ func TestPartyQueuedSendRevocationReportsKnownDeliveryState(t *testing.T) {
 				t.Fatal(err)
 			}
 			c := &connection{manager: m, owner: m.space("alice"), config: m.options.Home, pending: map[string]pending{input.ClientID: {input: input}}}
-			c.rejectPartySend([]*girc.Event{{Command: "PRIVMSG", Tags: girc.Tags{"+ircord/client-id": input.ClientID}}}, sent)
+			c.rejectOutboundPartySend(outboundWrite{clientID: input.ClientID}, sent)
 			command, err := s.Command("alice", input.ClientID)
 			expected := "failed"
 			if sent {

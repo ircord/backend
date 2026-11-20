@@ -28,7 +28,13 @@ export type Reaction = Schema['Reaction']
 export type Reply = Schema['Reply']
 export type Attachment = Schema['Attachment']
 export type MembershipEvent = Schema['MembershipEvent']
-export type Message = Schema['Message'] & { delivery?: 'pending' | 'failed'; liveSeq?: number }
+export type DeliveryState = 'queued' | 'pending' | 'uncertain' | 'unconfirmed' | 'failed'
+export type Message = Schema['Message'] & {
+  delivery?: DeliveryState
+  deliveryError?: string
+  deliveryHasAttachments?: boolean
+  liveSeq?: number
+}
 
 export type ProfileUpdate = Schema['ProfileUpdate']
 export type Capabilities = Partial<Schema['Capabilities']>

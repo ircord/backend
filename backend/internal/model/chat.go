@@ -270,6 +270,8 @@ type Message struct {
 	GIF            *GIF       `json:"gif,omitempty"`
 	Historical     bool       `json:"historical,omitempty"`
 	UpstreamID     string     `json:"upstreamId,omitempty"`
+	Unconfirmed    bool       `json:"unconfirmed,omitempty" doc:"This client has no confirmation from the IRC server for this message."`
+	Receipt        bool       `json:"confirmed,omitempty" doc:"The IRC server confirmed this client's send."`
 	// Account is the IRC account the network attributed one of your own messages
 	// to (account-tag), empty when it was sent without a login. Ergo authorizes
 	// deleting your own message against this account, not the current session.
@@ -351,13 +353,20 @@ type Event struct {
 	Message  string          `json:"message,omitempty"`
 }
 type SendInput struct {
-	Kind           string   `json:"kind,omitempty" enum:"message,action"`
-	Attachments    []string `json:"attachments,omitempty" maxItems:"10" uniqueItems:"true" doc:"Ordered upload IDs. Text must contain only their URLs in the same order, separated by spaces or newlines."`
-	ClientID       string   `json:"clientId"`
-	ConversationID string   `json:"conversationId"`
-	Text           string   `json:"text"`
-	ReplyToID      string   `json:"replyToId,omitempty"`
-	GIF            *GIF     `json:"gif,omitempty"`
+	Kind           string        `json:"kind,omitempty" enum:"message,action"`
+	Attachments    []string      `json:"attachments,omitempty" maxItems:"10" uniqueItems:"true" doc:"Ordered upload IDs. Text must contain only their URLs in the same order, separated by spaces or newlines."`
+	ClientID       string        `json:"clientId"`
+	ConversationID string        `json:"conversationId"`
+	Text           string        `json:"text"`
+	ReplyToID      string        `json:"replyToId,omitempty"`
+	GIF            *GIF          `json:"gif,omitempty"`
+	Endpoint       *SendEndpoint `json:"endpoint,omitempty"`
+}
+
+type SendEndpoint struct {
+	Host string `json:"host" minLength:"1" maxLength:"253"`
+	Port int    `json:"port" minimum:"1" maximum:"65535"`
+	TLS  bool   `json:"tls"`
 }
 type NetworkConfig struct {
 	AltNick  string     `json:"altNick,omitempty"`

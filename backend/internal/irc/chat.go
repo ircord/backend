@@ -3,7 +3,6 @@ package irc
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -14,19 +13,24 @@ import (
 
 	"github.com/lrstanley/girc"
 	"ircord/backend/internal/model"
-	"ircord/backend/internal/storage"
 )
 
 type pending struct {
 	input       SendInput
 	attachments []model.Attachment
 	messageID   string
+	label       string
+	attempt     string
 	at          time.Time
 }
 
 func (c *connection) message(e girc.Event) { c.messageWithHistory(e, false) }
 
 func (c *connection) messageWithHistory(e girc.Event, forceHistory bool, refs ...string) {
+	c.messageWithReceipt(e, forceHistory, false, refs...)
+}
+
+func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed bool, refs ...string) {
 	if e.Source == nil || len(e.Params) < 2 {
 		return
 	}
@@ -160,36 +164,12 @@ func (c *connection) messageWithHistory(e girc.Event, forceHistory bool, refs ..
 		if account := e.Tags["account"]; account != "" && account != "*" {
 			msg.Account = account
 		}
-		clientID := e.Tags["+ircord/client-id"]
-		c.mu.Lock()
-		p, exists := c.pending[clientID]
-		if exists && (p.input.ConversationID != conv.ID || p.input.Text != msg.Text || p.input.Kind != msg.Kind) {
-			exists = false
-		}
-		if !exists && !historical {
-			for key, candidate := range c.pending {
-				if candidate.input.ConversationID == conv.ID && candidate.input.Text == msg.Text && candidate.input.Kind == msg.Kind {
-					clientID = key
-					p = candidate
-					exists = true
-					break
-				}
-			}
-		}
-		if exists {
-			delete(c.pending, clientID)
-		}
-		c.mu.Unlock()
-		if !exists && clientID != "" && w.store != nil {
-			saved, err := w.store.Command(w.ownerID, clientID)
-			if err == nil && saved.ConversationID == conv.ID && saved.Input.Text == msg.Text && (saved.Input.Kind == msg.Kind || saved.Input.Kind == "" && msg.Kind == "message") {
-				p = pending{input: saved.Input, messageID: saved.MessageID}
-				exists = true
-				needsAcknowledgment = saved.State != "sent"
-			}
-		}
-		if exists {
+		clientID, p, recovered := c.matchOutboundEcho(e, msg, historical)
+		if clientID != "" {
 			msg.ClientID = clientID
+			msg.Unconfirmed = unconfirmed
+			msg.Receipt = !unconfirmed
+			needsAcknowledgment = recovered
 			// The controller may materialize the canonical party row before this
 			// account's echo arrives. That echo still owns its outbox acknowledgement.
 			if conv.Party != nil {
@@ -304,10 +284,7 @@ func validGIF(g *GIF) bool {
 	return true
 }
 
-func (m *Manager) Send(owner string, input SendInput) error {
-	if e := m.partyAccess(owner, input.ConversationID); e != nil {
-		return e
-	}
+func normalizeSendInput(input *SendInput) error {
 	if input.Kind == "" {
 		input.Kind = "message"
 	}
@@ -317,13 +294,28 @@ func (m *Manager) Send(owner string, input SendInput) error {
 	if !token(input.ClientID, 100) || strings.TrimSpace(input.Text) == "" || utf8.RuneCountInString(input.Text) > 4000 || len(input.Text) > 4096 || strings.ContainsAny(input.Text, "\r\x00") || !validGIF(input.GIF) || (input.GIF != nil && input.Text != input.GIF.URL) {
 		return fmt.Errorf("invalid message (maximum 4000 characters / 4096 UTF-8 bytes)")
 	}
+	return nil
+}
+
+func (m *Manager) dispatchSend(owner string, input SendInput, expected *connection) error {
+	if e := m.partyAccess(owner, input.ConversationID); e != nil {
+		return e
+	}
 	w := m.space(owner)
 	w.mu.Lock()
+	if w.storageErr != nil {
+		w.mu.Unlock()
+		return ErrStorage
+	}
 	conv, ok := w.conversations[input.ConversationID]
 	c := w.connections[conv.NetworkID]
-	if !ok || c == nil {
+	if !ok {
 		w.mu.Unlock()
 		return ErrNotFound
+	}
+	if c == nil || expected != nil && expected != c {
+		w.mu.Unlock()
+		return ErrDisconnected
 	}
 	if c.creatingTarget(c.target(conv)) {
 		w.mu.Unlock()
@@ -356,7 +348,7 @@ func (m *Manager) Send(owner string, input SendInput) error {
 		w.mu.Unlock()
 		return fmt.Errorf("this channel is moderated; voice or operator privileges are required")
 	}
-	tags := girc.Tags{"+ircord/client-id": input.ClientID, "label": input.ClientID}
+	tags := girc.Tags{"+ircord/client-id": input.ClientID}
 	if input.ReplyToID != "" {
 		found := false
 		replyMessages := w.messages[conv.ID]
@@ -379,6 +371,24 @@ func (m *Manager) Send(owner string, input SendInput) error {
 	}
 	isupport := clone(w.networks[conv.NetworkID].ISupport)
 	w.mu.Unlock()
+	messageID := ""
+	if w.store != nil {
+		command, err := w.store.Command(owner, input.ClientID)
+		if err != nil {
+			return ErrStorage
+		}
+		if command.State != "queued" {
+			return nil
+		}
+		if command.Route != outboundRoute(c.config) || !matchesSendEndpoint(input.Endpoint, c.config) {
+			return errSendRouteChanged
+		}
+		messageID = command.MessageID
+	}
+	if messageID == "" {
+		messageID = id()
+	}
+	attempt := id()
 	c.mu.Lock()
 	if !c.ready || conv.Kind == "channel" && !conv.Joined {
 		c.mu.Unlock()
@@ -408,8 +418,10 @@ func (m *Manager) Send(owner string, input SendInput) error {
 			return ErrUnsupported
 		}
 	}
-	if !c.caps["labeled-response"] {
-		delete(tags, "label")
+	label := ""
+	if c.caps["labeled-response"] && tags != nil {
+		label = "send:" + attempt
+		tags["label"] = label
 	}
 	wireText := input.Text
 	if input.Kind == "action" {
@@ -442,58 +454,19 @@ func (m *Manager) Send(owner string, input SendInput) error {
 			}
 		}
 	}
-	echo := c.caps["echo-message"]
-	if w.store != nil {
-		command, fresh, err := w.store.BeginCommand(owner, input)
-		if err != nil {
-			c.mu.Unlock()
-			if errors.Is(err, storage.ErrCommandIdentityConflict) {
-				return ErrClientIDConflict
-			}
-			return err
-		}
-		if !fresh {
-			switch command.State {
-			case "sent", "unconfirmed":
-				c.mu.Unlock()
-				saved, e := w.store.Message(owner, conv.ID, command.MessageID)
-				if e != nil {
-					return ErrStorage
-				}
-				w.mu.Lock()
-				w.emit("message.created", saved)
-				w.mu.Unlock()
-				return nil
-			case "pending":
-				c.mu.Unlock()
-				return nil
-			case "uncertain":
-				c.mu.Unlock()
-				return ErrUncertain
-			case "failed":
-				if e := w.store.RetryFailed(owner, input.ClientID); e != nil {
-					c.mu.Unlock()
-					return ErrStorage
-				}
-			}
-		}
-	}
-	c.pending[input.ClientID] = pending{input: clone(input), attachments: slices.Clone(attachments), messageID: id(), at: time.Now()}
-	c.mu.Unlock()
-	if err := c.enqueue(events...); err != nil {
-		c.mu.Lock()
-		delete(c.pending, input.ClientID)
+	if err := c.enqueueLocked(events...); err != nil {
 		c.mu.Unlock()
-		if w.store != nil {
-			_ = w.store.FailCommand(owner, input.ClientID, err.Error())
-		}
 		return err
 	}
-	if !echo {
-		// Without echo-message IRC cannot confirm acceptance. Mark this as a local
-		// sent copy only; it has no upstream ID and cannot be a reaction target.
-		c.message(girc.Event{Command: "PRIVMSG", Source: &girc.Source{Name: c.currentNick()}, Params: []string{c.target(conv), wireText}, Tags: girc.Tags{"+ircord/client-id": input.ClientID}, Timestamp: time.Now()})
+	c.pending[input.ClientID] = pending{input: clone(input), attachments: slices.Clone(attachments), messageID: messageID, label: label, attempt: attempt}
+	if c.outboundWrites == nil {
+		c.outboundWrites = make(map[*girc.Event]outboundWrite)
 	}
+	c.outboundWrites[events[0]] = outboundWrite{
+		clientID: input.ClientID, attempt: attempt, target: c.target(conv), text: wireText,
+		expectReply: c.caps["echo-message"] || label != "",
+	}
+	c.mu.Unlock()
 	m.endBriefAway(owner, conv.NetworkID, c)
 	return nil
 }

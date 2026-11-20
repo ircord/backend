@@ -17,13 +17,17 @@ import (
 type Command struct {
 	ClientID       string          `json:"clientId"`
 	ConversationID string          `json:"conversationId"`
-	State          string          `json:"state" enum:"pending,sent,unconfirmed,uncertain,failed"`
+	State          string          `json:"state" enum:"queued,pending,sent,unconfirmed,uncertain,failed,discarded"`
 	MessageID      string          `json:"messageId,omitempty"`
 	Error          string          `json:"error,omitempty"`
 	Input          model.SendInput `json:"-"`
+	Route          string          `json:"-"`
 }
 
 var ErrCommandIdentityConflict = errors.New("clientId already belongs to a different command")
+var ErrOutboxFull = errors.New("too many messages are waiting to send")
+
+const MaxQueuedCommands = 128
 
 func fingerprint(input model.SendInput) string {
 	raw, _ := json.Marshal(input)
@@ -47,6 +51,15 @@ func (s *Store) validateAttachmentOwnership(tx *sql.Tx, owner string, input mode
 }
 
 func (s *Store) BeginCommand(owner string, input model.SendInput) (Command, bool, error) {
+	return s.beginCommand(owner, input, "pending", "")
+}
+
+// QueueCommand commits the message before a writer is allowed to attempt it.
+func (s *Store) QueueCommand(owner string, input model.SendInput, route string) (Command, bool, error) {
+	return s.beginCommand(owner, input, "queued", route)
+}
+
+func (s *Store) beginCommand(owner string, input model.SendInput, state, route string) (Command, bool, error) {
 	raw, _ := json.Marshal(input)
 	fp := fingerprint(input)
 	tx, err := s.DB.Begin()
@@ -57,7 +70,10 @@ func (s *Store) BeginCommand(owner string, input model.SendInput) (Command, bool
 	if err = s.validateAttachmentOwnership(tx, owner, input); err != nil {
 		return Command{}, false, err
 	}
-	result, err := tx.Exec("INSERT INTO outbox(owner,client_id,conversation,fingerprint,input,state,created_ns) VALUES(?,?,?,?,?,'pending',?) ON CONFLICT(owner,client_id) DO NOTHING", owner, input.ClientID, input.ConversationID, fp, raw, time.Now().UnixNano())
+	result, err := tx.Exec(`INSERT INTO outbox(owner,client_id,conversation,fingerprint,input,state,created_ns,route_key)
+		SELECT ?,?,?,?,?,?,?,? WHERE ?!='queued' OR
+			(SELECT count(*) FROM outbox WHERE owner=? AND state IN ('queued','pending')) < ?
+		ON CONFLICT(owner,client_id) DO NOTHING`, owner, input.ClientID, input.ConversationID, fp, raw, state, time.Now().UnixNano(), route, state, owner, MaxQueuedCommands)
 	if err != nil {
 		return Command{}, false, err
 	}
@@ -66,6 +82,9 @@ func (s *Store) BeginCommand(owner string, input model.SendInput) (Command, bool
 		return Command{}, false, err
 	}
 	command, existing, err := s.command(owner, input.ClientID)
+	if errors.Is(err, ErrNotFound) && inserted == 0 && state == "queued" {
+		return command, false, ErrOutboxFull
+	}
 	if err != nil {
 		return command, false, err
 	}
@@ -79,7 +98,7 @@ func (s *Store) command(owner, clientID string) (Command, string, error) {
 	var fp string
 	var input []byte
 	var message sql.NullString
-	err := s.DB.QueryRow("SELECT client_id,conversation,state,message_id,error,input,fingerprint FROM outbox WHERE owner=? AND client_id=?", owner, clientID).Scan(&c.ClientID, &c.ConversationID, &c.State, &message, &c.Error, &input, &fp)
+	err := s.DB.QueryRow("SELECT client_id,conversation,state,message_id,error,input,fingerprint,route_key FROM outbox WHERE owner=? AND client_id=?", owner, clientID).Scan(&c.ClientID, &c.ConversationID, &c.State, &message, &c.Error, &input, &fp, &c.Route)
 	if errors.Is(err, sql.ErrNoRows) {
 		err = ErrNotFound
 	}
@@ -94,16 +113,42 @@ func (s *Store) Command(owner, clientID string) (Command, error) {
 	return c, err
 }
 func (s *Store) FailCommand(owner, clientID, message string) error {
-	_, err := s.DB.Exec("UPDATE outbox SET state='failed',error=? WHERE owner=? AND client_id=? AND state NOT IN ('sent','uncertain','unconfirmed')", message, owner, clientID)
+	_, err := s.DB.Exec("UPDATE outbox SET state='failed',error=? WHERE owner=? AND client_id=? AND state IN ('queued','pending','failed')", message, owner, clientID)
+	return err
+}
+func (s *Store) FailQueuedCommand(owner, clientID, message string) error {
+	_, err := s.DB.Exec("UPDATE outbox SET state='failed',error=? WHERE owner=? AND client_id=? AND state='queued'", message, owner, clientID)
 	return err
 }
 func (s *Store) UncertainCommand(owner, clientID, message string) error {
 	_, err := s.DB.Exec("UPDATE outbox SET state='uncertain',error=? WHERE owner=? AND client_id=? AND state='pending'", message, owner, clientID)
 	return err
 }
-func (s *Store) RetryFailed(owner, clientID string) error {
-	_, err := s.DB.Exec("UPDATE outbox SET state='pending',error='' WHERE owner=? AND client_id=? AND state='failed'", owner, clientID)
-	return err
+
+// StartCommand is a write fence. A crash after this commit leaves an
+// uncertain send, even if it occurred before the socket write began.
+func (s *Store) StartCommand(owner, clientID string) (bool, error) {
+	return changedCommand(s.DB.Exec("UPDATE outbox SET state='pending',attempted_ns=? WHERE owner=? AND client_id=? AND state='queued'", time.Now().UnixNano(), owner, clientID))
+}
+
+func (s *Store) RequeueCommand(owner, clientID, route string, acceptDuplicate bool) (bool, error) {
+	return changedCommand(s.DB.Exec(`UPDATE outbox SET state='queued',error='',route_key=?
+		WHERE owner=? AND client_id=? AND (state='failed' OR ? AND state IN ('uncertain','unconfirmed'))
+		  AND (route_key='' OR route_key=?)
+		  AND (SELECT count(*) FROM outbox WHERE owner=? AND state IN ('queued','pending')) < ?`, route, owner, clientID, acceptDuplicate, route, owner, MaxQueuedCommands))
+}
+
+func (s *Store) DiscardCommand(owner, clientID string) (bool, error) {
+	return changedCommand(s.DB.Exec(`UPDATE outbox SET state='discarded',error='',input='{}'
+		WHERE owner=? AND client_id=? AND state IN ('queued','failed','uncertain','unconfirmed')`, owner, clientID))
+}
+
+func changedCommand(result sql.Result, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
 }
 func (s *Store) UncertainCommands(owner string) error {
 	_, err := s.DB.Exec("UPDATE outbox SET state='uncertain',error='Backend restarted before IRC confirmation; reconcile history before retrying.' WHERE owner=? AND state='pending'", owner)

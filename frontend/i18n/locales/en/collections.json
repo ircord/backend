@@ -909,10 +909,11 @@
       "sent": "Sent {date}"
     },
     "drafts": {
-      "title": "Drafts",
-      "description": "Pick up where you left off. Drafts stay in this browser, on this device.",
+      "title": "Drafts and outbox",
+      "description": "Continue your drafts and check messages waiting to send or confirm.",
       "meta": "No unsent drafts | {count} unsent draft | {count} unsent drafts",
-      "scope": "Messages waiting to send and attachments are not listed here.",
+      "scope": "Drafts stay in this browser on this device.",
+      "outbox": "Outbox",
       "storageWarning": "This browser isn’t saving drafts right now (storage is full or blocked). They stay here until this tab closes.",
       "emptyTitle": "No drafts",
       "empty": "Text you type and don’t send is kept here, one draft per conversation.",

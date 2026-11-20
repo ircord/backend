@@ -10,6 +10,7 @@ import type {
   ChannelSettingsChange,
   ClientEvent,
   Conversation,
+  DeliveryState,
   Member,
   Message,
   MessagePage,
@@ -22,6 +23,8 @@ import type {
 } from '../../shared/types/chat'
 import type { GifItem } from '../../shared/types/media'
 import type { components } from '../../shared/generated/api'
+import { ApiError } from '../../shared/api/client'
+import { sendCopies, type SendCopy } from '../utils/send-copies'
 import { ATTRACT_MS, type AttractTarget } from '../../shared/utils/attract'
 import {
   messageActionReason as actionReason,
@@ -32,7 +35,7 @@ import {
   messageTextReason,
   type MessageAction,
 } from '../../shared/utils/features'
-import { markdownToIrc, wireText as toWireText } from '../../shared/utils/irc'
+import { ircToMarkdown, markdownToIrc, wireText as toWireText } from '../../shared/utils/irc'
 import { selfForNetwork } from '../../shared/utils/identity'
 import {
   createNickIndex,
@@ -171,8 +174,27 @@ export const useChatStore = defineStore('chat', () => {
   )
   /** False once this device refused to save drafts (storage full or blocked). */
   const draftsSaved = ref(true)
-  /** Messages sent from this tab that the server has not acknowledged yet, per conversation. */
+  /** Messages that still need a server acknowledgment or a user decision. */
   const outbox = reactive<Record<string, Message[]>>({})
+  const copies = sendCopies(accountPrefix)
+  const localSends = new Map<string, SendCopy>()
+  const backendSends = new Set<string>()
+  const completedSends = new Set<string>()
+  const sending = new Set<string>()
+  const demoPending = new Map<string, ReturnType<typeof setTimeout>>()
+  function addSend(message: Message) {
+    const list = outbox[message.conversationId] ?? []
+    if (!list.some((m) => m.clientId === message.clientId)) {
+      outbox[message.conversationId] = [...list, message]
+    }
+  }
+  function restoreSendCopy(copy: SendCopy) {
+    const key = copy.message.clientId!
+    if (completedSends.has(key)) return
+    localSends.set(key, copy)
+    addSend({ ...copy.message, delivery: copy.message.delivery ?? 'queued' })
+  }
+  if (auth.account) copies.list().forEach(restoreSendCopy)
   const loadingOlder = ref(false)
   const loadingNewer = ref(false)
   let aroundRead: AbortController | undefined
@@ -594,7 +616,14 @@ export const useChatStore = defineStore('chat', () => {
     }))
 
   function putMessage(message: Message, seq = 0) {
-    if (message.clientId) settle(message.conversationId, message.clientId)
+    if (message.clientId) {
+      if (data.value?.demo || message.confirmed || (!message.unconfirmed && message.upstreamId))
+        settle(message.conversationId, message.clientId)
+      else if (message.unconfirmed) {
+        backendSends.add(message.clientId)
+        setDelivery(message.clientId, 'unconfirmed')
+      }
+    }
     const key = messagesQuery(message.conversationId).key
     let page = queryCache.getQueryData<MessagePage>(key)
     if (
@@ -615,26 +644,38 @@ export const useChatStore = defineStore('chat', () => {
       ?.items.find((item) => item.id === message.id)
   // HTTP acknowledgments cannot replace a socket update received while waiting.
   function putMessageReply(message: Message, previous?: Message) {
-    if (message.clientId) settle(message.conversationId, message.clientId)
+    if (
+      message.clientId &&
+      (data.value?.demo || message.confirmed || (!message.unconfirmed && message.upstreamId))
+    )
+      settle(message.conversationId, message.clientId)
     if (cachedMessage(message) === previous) putMessage(message)
   }
 
   // ---- Outbox ---------------------------------------------------------------------------------
 
-  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
   function settle(conversationId: string, clientId: string) {
-    clearTimeout(pendingTimers.get(clientId))
-    pendingTimers.delete(clientId)
-    attachmentIds.delete(clientId)
+    clearTimeout(demoPending.get(clientId))
+    demoPending.delete(clientId)
+    completedSends.add(clientId)
+    if (completedSends.size > 1024) completedSends.delete(completedSends.values().next().value!)
+    backendSends.delete(clientId)
+    localSends.delete(clientId)
+    copies.remove(clientId)
     const list = outbox[conversationId]
     if (list) outbox[conversationId] = list.filter((m) => m.clientId !== clientId)
   }
-  function markFailed(clientId: string) {
-    clearTimeout(pendingTimers.get(clientId))
-    pendingTimers.delete(clientId)
+  function setDelivery(clientId: string, delivery: DeliveryState, deliveryError?: string) {
     for (const [id, list] of Object.entries(outbox))
       if (list.some((m) => m.clientId === clientId))
-        outbox[id] = list.map((m) => (m.clientId === clientId ? { ...m, delivery: 'failed' } : m))
+        outbox[id] = list.map((m) =>
+          m.clientId === clientId ? { ...m, delivery, deliveryError } : m,
+        )
+    const saved = localSends.get(clientId)
+    if (saved) {
+      saved.message = { ...saved.message, delivery, deliveryError }
+      if (!data.value?.demo) copies.save(saved)
+    }
   }
 
   // ---- Realtime -------------------------------------------------------------------------------
@@ -853,7 +894,14 @@ export const useChatStore = defineStore('chat', () => {
     if (event.type === 'devices.updated')
       return void queryCache.invalidateQueries({ key: devicesQuery.key }).catch(() => {})
     if (event.type === 'command.error') {
-      if (event.clientId) markFailed(event.clientId)
+      if (
+        event.clientId &&
+        Object.values(outbox).some((list) => list.some((m) => m.clientId === event.clientId))
+      ) {
+        if (data.value?.demo) setDelivery(event.clientId, 'failed', event.message)
+        else void refreshOutbox()
+        return
+      }
       return notify(event.message)
     }
     if (event.seq <= cursor.value) {
@@ -1229,6 +1277,7 @@ export const useChatStore = defineStore('chat', () => {
       if (connectedOnce) reconnects.value++
       connectedOnce = true
       liveSince.value = Date.now()
+      void refreshOutbox()
       const activePage = queryCache.getQueryData<MessagePage>(messagesQuery(activeId.value).key)
       if (resumed || historyChangedDuringReplay || activePage?.offline || activePage?.partial)
         void refreshHistory()
@@ -1265,6 +1314,7 @@ export const useChatStore = defineStore('chat', () => {
     (value) => {
       if (!value || ready) return
       ready = true
+      queueMicrotask(() => void refreshOutbox())
       cursor.value = value.cursor
       networkId.value = value.networks[0]?.id ?? ''
       recovery.start()
@@ -1506,33 +1556,73 @@ export const useChatStore = defineStore('chat', () => {
 
   // ---- Sending --------------------------------------------------------------------------------
 
+  type Command = components['schemas']['CommandResponse']
+  type OutboxEntry = components['schemas']['OutboxEntry']
+
+  function applyCommand(command: Command) {
+    const { clientId, conversationId, state, message } = command
+    if (disposed || completedSends.has(clientId)) return
+    if (state === 'sent' || state === 'discarded') {
+      settle(conversationId, clientId)
+      if (message) {
+        const prior = cachedMessage(message)
+        putMessageReply(message, prior?.unconfirmed ? prior : undefined)
+      }
+      return
+    }
+    backendSends.add(clientId)
+    setDelivery(clientId, state, command.error)
+    if (message && state === 'unconfirmed') putMessageReply({ ...message, unconfirmed: true })
+  }
+
   function transmit(message: Message) {
     const clientId = message.clientId!
+    if (sending.has(clientId) || completedSends.has(clientId)) return
+    const copy = localSends.get(clientId)
+    const attachments = copy?.attachments
     const payload = {
       clientId,
       text: message.text,
       ...(message.replyTo ? { replyToId: message.replyTo.id } : {}),
       ...(message.gif ? { gif: message.gif } : {}),
       ...(message.kind === 'action' ? { kind: 'action' as const } : {}),
-      ...(attachmentIds.get(clientId) ? { attachments: attachmentIds.get(clientId) } : {}),
+      ...(attachments?.length ? { attachments } : {}),
     }
-    pendingTimers.set(
-      clientId,
-      setTimeout(() => void reconcile(message), 15_000),
-    )
     if (!data.value?.demo) {
+      if (!navigator.onLine) return
+      sending.add(clientId)
       void apiClient()
-        .sendMessage(message.conversationId, payload)
-        .then((accepted) => {
-          if (accepted.message) putMessageReply(accepted.message)
-        })
+        .sendMessage(
+          message.conversationId,
+          { ...payload, ...(copy?.endpoint ? { endpoint: copy.endpoint } : {}) },
+          AbortSignal.timeout(12_000),
+        )
+        .then(applyCommand)
         .catch((error) => {
-          markFailed(clientId)
-          notifyError(error)
+          if (completedSends.has(clientId)) return
+          if (error instanceof ApiError && error.code === 'delivery-uncertain') {
+            setDelivery(clientId, 'uncertain')
+          } else if (
+            error instanceof ApiError &&
+            error.status < 500 &&
+            error.code !== 'operation-busy' &&
+            error.code !== 'connection-unavailable'
+          ) {
+            setDelivery(clientId, 'failed', errorText(error, translate))
+          }
         })
+        .finally(() => sending.delete(clientId))
       return
     }
-    if (socket?.readyState !== WebSocket.OPEN) return markFailed(clientId)
+    if (socket?.readyState !== WebSocket.OPEN) return setDelivery(clientId, 'failed')
+    clearTimeout(demoPending.get(clientId))
+    demoPending.set(
+      clientId,
+      setTimeout(() => {
+        demoPending.delete(clientId)
+        setDelivery(clientId, 'failed')
+      }, 15_000),
+    )
     socket.send(
       JSON.stringify({
         v: 1,
@@ -1542,21 +1632,84 @@ export const useChatStore = defineStore('chat', () => {
       }),
     )
   }
-  async function reconcile(message: Message) {
-    if (data.value?.demo) return markFailed(message.clientId!)
-    try {
-      const command = await apiClient().command(message.clientId!)
-      if (command.message) {
-        putMessageReply(command.message)
-        return
-      }
-      if (command.state === 'uncertain') notify(translate('workspaceUi.chat.deliveryUncertain'))
-    } catch {
-      /* The durable command remains available when connectivity returns. */
-    }
-    markFailed(message.clientId!)
+
+  function restoreServerSend(entry: OutboxEntry) {
+    if (completedSends.has(entry.clientId) || sending.has(entry.clientId)) return
+    const { payload } = entry
+    const quoted = payload.replyToId
+      ? queryCache
+          .getQueryData<MessagePage>(messagesQuery(entry.conversationId).key)
+          ?.items.find((m) => m.id === payload.replyToId)
+      : undefined
+    addSend({
+      id: `pending-${entry.clientId}`,
+      clientId: entry.clientId,
+      conversationId: entry.conversationId,
+      senderId: 'you',
+      text: payload.text,
+      createdAt: entry.createdAt,
+      kind: payload.kind ?? 'message',
+      reactions: [],
+      ...(payload.gif ? { gif: payload.gif } : {}),
+      ...(payload.attachments?.length ? { deliveryHasAttachments: true } : {}),
+      ...(payload.replyToId
+        ? {
+            replyTo: {
+              id: payload.replyToId,
+              nick: quoted ? (member(quoted.senderId)?.nick ?? '') : '',
+              text: quoted?.text.slice(0, 160) ?? '',
+            },
+          }
+        : {}),
+    })
+    applyCommand(entry)
   }
-  const attachmentIds = new Map<string, string[]>()
+
+  let refreshingOutbox = false
+  async function refreshOutbox() {
+    if (refreshingOutbox || disposed || !auth.account || data.value?.demo || !navigator.onLine)
+      return
+    refreshingOutbox = true
+    try {
+      const seen = new Set<string>()
+      let query: { after?: string; afterId?: string } = {}
+      for (;;) {
+        const page = await apiClient().outbox(query, AbortSignal.timeout(10_000))
+        if (disposed) return
+        for (const entry of page.items) {
+          seen.add(entry.clientId)
+          restoreServerSend(entry)
+        }
+        const last = page.items.at(-1)
+        if (!page.more || !last) break
+        query = { after: last.createdAt, afterId: last.clientId }
+      }
+      for (const message of Object.values(outbox).flat()) {
+        const id = message.clientId!
+        if (disposed || seen.has(id) || sending.has(id) || completedSends.has(id)) continue
+        try {
+          const command = await apiClient().command(id, AbortSignal.timeout(10_000))
+          if (!disposed) applyCommand(command)
+        } catch (error) {
+          if (disposed || errorStatus(error) !== 404 || !localSends.has(id)) continue
+          if (message.delivery === 'queued' && !backendSends.has(id)) transmit(message)
+          else if (message.delivery === 'pending') setDelivery(id, 'uncertain')
+        }
+      }
+    } catch {
+      // Keep every copy and try again when the backend is reachable.
+    } finally {
+      refreshingOutbox = false
+    }
+  }
+  const outboxPoll = setInterval(() => {
+    if (
+      Object.values(outbox).some((list) =>
+        list.some((m) => m.delivery === 'queued' || m.delivery === 'pending'),
+      )
+    )
+      void refreshOutbox()
+  }, 4_000)
   /**
    * Sends to the open conversation, or to `options.conversationId` when given. Markdown-style
    * shortcuts become IRC formatting codes, so other IRC clients see bold and italics too.
@@ -1614,19 +1767,6 @@ export const useChatStore = defineStore('chat', () => {
       contentType: upload.contentType,
       size: upload.size,
     }))
-    if (uploads.length)
-      attachmentIds.set(
-        clientId,
-        uploads.map((upload) => upload.id),
-      )
-    delete unreadMarkers[targetId]
-    delete unreadAnchors[targetId]
-    // Replying is reading on purpose, so it ends a manual “mark as unread”.
-    if (target.unreadFrom) void markRead(targetId)
-    // What you send appears at the live end, so a window into older history goes back there.
-    // At the live end already, reloading the newest page would only replace the rows on screen.
-    const page = queryCache.getQueryData<MessagePage>(messagesQuery(targetId).key)
-    if (!page || page.detached || page.hasNewer) void returnToPresent(targetId)
     const message: Message = {
       id: `pending-${clientId}`,
       clientId,
@@ -1636,7 +1776,7 @@ export const useChatStore = defineStore('chat', () => {
       createdAt: new Date().toISOString(),
       kind: options.kind ?? 'message',
       reactions: [],
-      delivery: 'pending',
+      delivery: data.value?.demo ? 'pending' : 'queued',
       ...(gif ? { gif } : {}),
       ...(attachments.length === 1
         ? { attachment: attachments[0] }
@@ -1653,19 +1793,103 @@ export const useChatStore = defineStore('chat', () => {
           }
         : {}),
     }
-    outbox[message.conversationId] = [...(outbox[message.conversationId] ?? []), message]
+    const copy: SendCopy = {
+      message,
+      attachments: uploads.map((upload) => upload.id),
+      endpoint: { host: targetNetwork.host, port: targetNetwork.port, tls: targetNetwork.tls },
+    }
+    if (!data.value?.demo && !copies.save(copy)) {
+      notify(translate('workspaceUi.message.outboxStorageFailed'), { error: true })
+      return false
+    }
+    localSends.set(clientId, copy)
+    delete unreadMarkers[targetId]
+    delete unreadAnchors[targetId]
+    // Replying is reading on purpose, so it ends a manual “mark as unread”.
+    if (target.unreadFrom) void markRead(targetId)
+    const page = queryCache.getQueryData<MessagePage>(messagesQuery(targetId).key)
+    if (!page || page.detached || page.hasNewer) void returnToPresent(targetId)
+    addSend(message)
     transmit(message)
     return true
   }
-  function retry(message: Message) {
-    const list = outbox[message.conversationId] ?? []
-    outbox[message.conversationId] = list.map((m) =>
-      m.clientId === message.clientId ? { ...m, delivery: 'pending' } : m,
-    )
-    transmit(message)
+  async function retry(message: Message, acceptDuplicate = false) {
+    const id = message.clientId!
+    if (sending.has(id) || completedSends.has(id)) return
+    if (
+      data.value?.demo ||
+      (!backendSends.has(id) && localSends.has(id) && message.delivery === 'failed')
+    ) {
+      setDelivery(id, data.value?.demo ? 'pending' : 'queued')
+      transmit(message)
+      return
+    }
+    sending.add(id)
+    let resendLocal = false
+    try {
+      applyCommand(await apiClient().retrySend(id, acceptDuplicate))
+    } catch (error) {
+      if (errorStatus(error) === 404 && acceptDuplicate && localSends.has(id)) {
+        backendSends.delete(id)
+        setDelivery(id, 'queued')
+        resendLocal = true
+      } else {
+        notifyError(error)
+        void refreshOutbox()
+      }
+    } finally {
+      sending.delete(id)
+    }
+    if (resendLocal) transmit(message)
   }
-  function discard(message: Message) {
-    if (message.clientId) settle(message.conversationId, message.clientId)
+
+  async function checkDelivery(message: Message) {
+    if (!message.clientId) return
+    try {
+      applyCommand(await apiClient().checkSend(message.clientId))
+    } catch (error) {
+      notifyError(error)
+    }
+  }
+
+  async function discard(message: Message) {
+    const id = message.clientId
+    if (!id || sending.has(id)) return false
+    if (!data.value?.demo) {
+      try {
+        await apiClient().discardSend(id)
+      } catch (error) {
+        if (errorStatus(error) !== 404 || backendSends.has(id)) {
+          notifyError(error)
+          return false
+        }
+      }
+    }
+    settle(message.conversationId, id)
+    return true
+  }
+
+  async function moveSendToDraft(message: Message) {
+    const { conversationId, text, kind } = message
+    syncDrafts()
+    const body = ircToMarkdown(text)
+    const restored = kind === 'action' ? `/me ${body}` : body.startsWith('/') ? `/${body}` : body
+    const current = drafts[conversationId]
+    const joined = current ? `${current}\n${restored}` : restored
+    if (
+      joined.length > 4000 ||
+      (!current && restoreDraftText(drafts, conversationId, restored) !== 'restored')
+    ) {
+      notify(translate('workspaceUi.message.outboxDraftNoRoom'), { error: true })
+      return
+    }
+    if (current) drafts[conversationId] = joined
+    flushDrafts()
+    if (!draftsSaved.value || drafts[conversationId] !== joined) {
+      notify(translate('workspaceUi.message.outboxDraftSaveFailed'), { error: true })
+      return
+    }
+    await discard(message)
   }
   /** Sends one IRC line to a network. Failures arrive as `command.error` notices. */
   function raw(line: string, target = networkId.value) {
@@ -2142,6 +2366,10 @@ export const useChatStore = defineStore('chat', () => {
   // Another tab saved: show its drafts here too (the overview stays current).
   const onStorage = (event: StorageEvent) => {
     if (event.key === draftsKey && event.storageArea === localStorage) syncDrafts()
+    if (event.key && event.newValue && event.storageArea === localStorage) {
+      const copy = copies.read(event.key)
+      if (copy) restoreSendCopy(copy)
+    }
   }
   /**
    * Discards a draft from the overview, unless it changed since the overview showed it, here or
@@ -2210,7 +2438,8 @@ export const useChatStore = defineStore('chat', () => {
     clearTimeout(noticeTimer)
     clearTimeout(readTimer)
     clearTimeout(draftTimer)
-    pendingTimers.forEach(clearTimeout)
+    clearInterval(outboxPoll)
+    demoPending.forEach(clearTimeout)
     typingTimers.forEach(clearTimeout)
     clearTimeout(typingIdle)
     window.removeEventListener('online', onOnline)
@@ -2298,6 +2527,8 @@ export const useChatStore = defineStore('chat', () => {
     send,
     raw,
     retry,
+    checkDelivery,
+    moveSendToDraft,
     discard,
     onIncoming,
     onAlert,

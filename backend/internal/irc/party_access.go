@@ -77,26 +77,22 @@ func (c *connection) partyTargetAccess(target string) error {
 
 // A membership/protection change can invalidate a send after HTTP enqueues it.
 // Report a known unsent command immediately; only a partially sent batch is uncertain.
-func (c *connection) rejectPartySend(events []*girc.Event, sent bool) {
-	for _, event := range events {
-		clientID := event.Tags["+ircord/client-id"]
-		if clientID == "" {
-			clientID = event.Tags["label"]
-		}
-		c.mu.Lock()
-		_, pending := c.pending[clientID]
-		delete(c.pending, clientID)
-		c.mu.Unlock()
-		if !pending {
-			continue
-		}
-		c.owner.mu.Lock()
-		if sent {
-			c.owner.commandUncertain(clientID, "The party changed while sending. Check the conversation before retrying.")
-		} else {
-			c.owner.commandError(clientID, "The party changed before this message was sent. Try again when the conversation is available.")
-		}
-		c.owner.mu.Unlock()
+func (c *connection) rejectOutboundPartySend(send outboundWrite, sent bool) {
+	c.mu.Lock()
+	p, pending := c.pending[send.clientID]
+	if pending && p.attempt == send.attempt {
+		delete(c.pending, send.clientID)
+	}
+	c.mu.Unlock()
+	if !pending || p.attempt != send.attempt {
+		return
+	}
+	c.owner.mu.Lock()
+	defer c.owner.mu.Unlock()
+	if sent {
+		c.owner.commandUncertain(send.clientID, "The party changed while sending. Check the conversation before retrying.")
+	} else {
+		c.owner.commandError(send.clientID, "The party changed before this message was sent. Try again when the conversation is available.")
 	}
 }
 

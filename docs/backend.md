@@ -250,7 +250,14 @@ Problem `type` values below are stable identifiers for recognized operation outc
 | No stable type | 503 | The request context was canceled. |
 | No stable type | 500 | A request deadline expired; public detail remains generic. |
 
-Reconcile uncertain sends with `GET /api/v1/commands/{clientId}` and retained history before retrying. Never resend an uncertain command automatically.
+The backend keeps queued sends across restarts and retries them when the IRC connection is ready.
+It records the start of a write before handing it to the IRC client.
+An interrupted write remains uncertain until the server provides an acknowledgment or matching history.
+The backend binds each queued send to its IRC endpoint and login. Removing a network leaves unresolved messages in the outbox.
+`GET /api/v1/outbox` lists the account's retained sends and their payloads.
+`GET /api/v1/commands/{clientId}` returns the state of one send.
+`POST /api/v1/commands/{clientId}/check` checks retained IRC history.
+An uncertain resend through `POST /api/v1/commands/{clientId}/retry` requires `acceptDuplicate: true`.
 A 503 cancellation does not prove that a mutation failed. Keep its operation identity and reconcile its state before submitting a different operation.
 Reuse a `clientId` only for an identical retry. Use a new ID when the payload or conversation changes.
 
@@ -406,7 +413,7 @@ Run `make ergo-down` and `make s3-down` when those fixtures are no longer needed
 ## Failure modes
 
 - A workspace storage failure stops durable delivery and causes unavailable responses. Restore storage and restart to reload committed state.
-- A send with an uncertain outcome is never resent automatically. Inspect command status and retained history before retrying.
+- Unconfirmed messages stay in Drafts and outbox. Checking delivery can find a matching message when the IRC server retains it.
 - Offline recovery depends on upstream history retention and negotiated capabilities. Servers without chat history cannot recover messages missed while disconnected.
 - Upstream filehosts can lack deletion support. Account deletion removes IRCord metadata but cannot retract those shared upstream URLs.
 - An upload past the account's quota is refused with status 413 and names the limit. Avatars and upstream filehost uploads do not count toward the quota.

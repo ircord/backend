@@ -353,15 +353,27 @@ func TestBriefAwayShowsOnPresenceAndEndsWithTheNextMessage(t *testing.T) {
 	awayAfterSend := func(id string) bool {
 		t.Helper()
 		send(id)
+		sentAway := false
 		for _, e := range drain(c) {
-			if e.Command == "AWAY" {
+			switch e.Command {
+			case "PRIVMSG":
+				c.mu.Lock()
+				send := c.outboundWrites[e]
+				delete(c.outboundWrites, e)
+				started := c.startOutboundWriteLocked(send)
+				c.mu.Unlock()
+				if !started {
+					t.Fatal("message did not reach the writer")
+				}
+				c.localOutboundEcho(send.clientID, send.target, send.text, false)
+			case "AWAY":
 				if len(e.Params) != 0 {
 					t.Fatalf("sending a message set away again: %v", e)
 				}
-				return true
+				sentAway = true
 			}
 		}
-		return false
+		return sentAway
 	}
 
 	if err := m.RawCommand("alice", "network", "afk1", "AWAY :AFK: lunch"); err != nil {

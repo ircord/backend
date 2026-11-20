@@ -3,25 +3,50 @@ package api
 import (
 	"context"
 	"errors"
+	"time"
+
 	"github.com/danielgtaylor/huma/v2"
 	"ircord/backend/internal/irc"
+	"ircord/backend/internal/model"
 	"ircord/backend/internal/storage"
 )
 
 type MessageInput struct {
 	ID   string `path:"id"`
 	Body struct {
-		ClientID    string   `json:"clientId" minLength:"1" maxLength:"100"`
-		Text        string   `json:"text" maxLength:"4000"`
-		ReplyToID   string   `json:"replyToId,omitempty"`
-		GIF         *irc.GIF `json:"gif,omitempty"`
-		Kind        string   `json:"kind,omitempty" enum:"message,action"`
-		Attachments []string `json:"attachments,omitempty" nullable:"false" maxItems:"10" uniqueItems:"true" doc:"Ordered upload IDs. Text must contain only their URLs in the same order, separated by spaces or newlines; one upload requires its exact URL."`
+		ClientID    string              `json:"clientId" minLength:"1" maxLength:"100"`
+		Text        string              `json:"text" maxLength:"4000"`
+		ReplyToID   string              `json:"replyToId,omitempty"`
+		GIF         *irc.GIF            `json:"gif,omitempty"`
+		Kind        string              `json:"kind,omitempty" enum:"message,action"`
+		Attachments []string            `json:"attachments,omitempty" nullable:"false" maxItems:"10" uniqueItems:"true" doc:"Ordered upload IDs. Text must contain only their URLs in the same order, separated by spaces or newlines; one upload requires its exact URL."`
+		Endpoint    *model.SendEndpoint `json:"endpoint,omitempty" doc:"The original network endpoint for a retained browser send."`
 	}
 }
 type CommandResponse struct {
 	storage.Command
 	Message *irc.Message `json:"message,omitempty"`
+}
+
+type OutboxPage struct {
+	Items []storage.OutboxEntry `json:"items" nullable:"false"`
+	More  bool                  `json:"more"`
+}
+
+type OutboxQuery struct {
+	After   string `query:"after" maxLength:"35"`
+	AfterID string `query:"afterId" maxLength:"100"`
+}
+
+type RetrySendInput struct {
+	ClientID string `path:"clientId" maxLength:"100"`
+	Body     struct {
+		AcceptDuplicate bool `json:"acceptDuplicate"`
+	}
+}
+
+type SendCommandPath struct {
+	ClientID string `path:"clientId" maxLength:"100"`
 }
 
 func (s *Server) commandResponse(ctx context.Context, owner, client string) (CommandResponse, error) {
@@ -76,7 +101,7 @@ func (s *Server) registerCommands() {
 		return result(s.finishRedaction(ctx, r, err, in.Reason, in.DeleteFiles))
 	})
 	huma.Register(s.API, huma.Operation{OperationID: "send-message", Method: "POST", Path: "/api/v1/conversations/{id}/messages", DefaultStatus: 202}, func(ctx context.Context, in *MessageInput) (*Output[CommandResponse], error) {
-		input := irc.SendInput{ClientID: in.Body.ClientID, ConversationID: in.ID, Text: in.Body.Text, ReplyToID: in.Body.ReplyToID, GIF: in.Body.GIF, Kind: in.Body.Kind, Attachments: in.Body.Attachments}
+		input := irc.SendInput{ClientID: in.Body.ClientID, ConversationID: in.ID, Text: in.Body.Text, ReplyToID: in.Body.ReplyToID, GIF: in.Body.GIF, Kind: in.Body.Kind, Attachments: in.Body.Attachments, Endpoint: in.Body.Endpoint}
 		if err := s.Manager.Send(owner(ctx), input); err != nil {
 			return result(CommandResponse{}, err)
 		}
@@ -95,5 +120,40 @@ func (s *Server) registerCommands() {
 			err = irc.ErrNotFound
 		}
 		return result(v, err)
+	})
+	huma.Register(s.API, huma.Operation{OperationID: "list-outbox", Method: "GET", Path: "/api/v1/outbox", Summary: "List the account's unresolved messages"}, func(ctx context.Context, in *OutboxQuery) (*Output[OutboxPage], error) {
+		if s.options.Store == nil {
+			return result(OutboxPage{Items: []storage.OutboxEntry{}}, nil)
+		}
+		after := time.Unix(0, 0)
+		if in.After != "" {
+			var err error
+			after, err = time.Parse(time.RFC3339Nano, in.After)
+			if err != nil {
+				return nil, huma.Error400BadRequest("Invalid outbox cursor.")
+			}
+		}
+		const limit = 50
+		items, err := s.options.Store.UnresolvedCommands(owner(ctx), after, in.AfterID, limit+1)
+		more := len(items) > limit
+		if more {
+			items = items[:limit]
+		}
+		return result(OutboxPage{Items: items, More: more}, err)
+	})
+	huma.Register(s.API, huma.Operation{OperationID: "retry-send", Method: "POST", Path: "/api/v1/commands/{clientId}/retry", Summary: "Retry a retained message"}, func(ctx context.Context, in *RetrySendInput) (*Output[CommandResponse], error) {
+		if err := s.Manager.RetrySend(owner(ctx), in.ClientID, in.Body.AcceptDuplicate); err != nil {
+			return result(CommandResponse{}, err)
+		}
+		return result(s.commandResponse(ctx, owner(ctx), in.ClientID))
+	})
+	huma.Register(s.API, huma.Operation{OperationID: "check-send", Method: "POST", Path: "/api/v1/commands/{clientId}/check", Summary: "Check server history for a retained message"}, func(ctx context.Context, in *SendCommandPath) (*Output[CommandResponse], error) {
+		if err := s.Manager.CheckSend(ctx, owner(ctx), in.ClientID); err != nil {
+			return result(CommandResponse{}, err)
+		}
+		return result(s.commandResponse(ctx, owner(ctx), in.ClientID))
+	})
+	huma.Register(s.API, huma.Operation{OperationID: "discard-send", Method: "DELETE", Path: "/api/v1/commands/{clientId}", Summary: "Discard a retained send"}, func(ctx context.Context, in *SendCommandPath) (*struct{}, error) {
+		return empty(s.Manager.DiscardSend(owner(ctx), in.ClientID))
 	})
 }

@@ -18,6 +18,12 @@ const rows = computed(() =>
   ),
 )
 const total = computed(() => draftCount(chat.drafts))
+const outbox = computed(() =>
+  Object.values(chat.outbox)
+    .flat()
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+)
+const conversation = (id: string) => chat.data?.conversations.find((c) => c.id === id)
 const icon = (row: DraftRow) =>
   row.kind === 'server' ? 'terminal' : row.kind === 'direct' ? 'message' : 'hash'
 const title = (row: DraftRow) =>
@@ -111,6 +117,43 @@ function rowKeys(event: KeyboardEvent) {
       class="drafts-list min-h-0 flex-1 overflow-y-auto px-4 pb-4 max-[700px]:px-1.5"
       @keydown="rowKeys"
     >
+      <section
+        v-if="outbox.length"
+        class="mb-5 space-y-2 px-3"
+        aria-labelledby="outbox-heading"
+      >
+        <h2
+          id="outbox-heading"
+          class="m-0 text-sm font-semibold text-foreground"
+        >
+          {{ t('collectionsUi.drafts.outbox') }}
+        </h2>
+        <ul class="m-0 list-none divide-y divide-border p-0">
+          <li
+            v-for="message in outbox"
+            :key="message.id"
+            class="py-2.5"
+          >
+            <button
+              v-if="conversation(message.conversationId)"
+              class="mb-1 rounded-sm text-sm font-semibold text-foreground hover:text-primary"
+              @click="emit('open', message.conversationId)"
+            >
+              {{ label(conversation(message.conversationId)!) }}
+            </button>
+            <p
+              v-else
+              class="m-0 mb-1 text-sm text-muted-foreground"
+            >
+              {{ t('workspaceUi.drafts.unavailableConversation') }}
+            </p>
+            <div class="whitespace-pre-wrap wrap-anywhere text-sm text-body">
+              <MessageContent :text="message.text" />
+            </div>
+            <DeliveryActions :message="message" />
+          </li>
+        </ul>
+      </section>
       <div class="w-full space-y-0.5">
         <EmptyState
           v-if="!rows.length"

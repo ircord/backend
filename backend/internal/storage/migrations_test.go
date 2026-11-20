@@ -3,12 +3,57 @@ package storage
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"ircord/backend/internal/model"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestOutboxUpgradeKeepsRetainedMessages(t *testing.T) {
+	for _, version := range []int{41, 42} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			dir := t.TempDir()
+			store, err := Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			account(t, store, "alice")
+			input := model.SendInput{ClientID: "retained", ConversationID: "room", Text: "Still in the outbox"}
+			if _, _, err := store.BeginCommand("alice", input); err != nil {
+				store.Close()
+				t.Fatal(err)
+			}
+			if err := store.UncertainCommand("alice", input.ClientID, "No receipt."); err != nil {
+				store.Close()
+				t.Fatal(err)
+			}
+			if _, err := store.DB.Exec("ALTER TABLE outbox DROP COLUMN route_key; DELETE FROM goose_db_version WHERE version_id>?", version); err != nil {
+				store.Close()
+				t.Fatal(err)
+			}
+			if version == 41 {
+				if _, err := store.DB.Exec("DROP INDEX outbox_delivery; ALTER TABLE outbox DROP COLUMN attempted_ns"); err != nil {
+					store.Close()
+					t.Fatal(err)
+				}
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			store, err = Open(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			entry, err := store.OutboxEntry("alice", input.ClientID)
+			if err != nil || entry.State != "uncertain" || entry.Payload.Text != input.Text || entry.Error != "No receipt." {
+				t.Fatalf("upgrade lost the retained message: %v %v", entry, err)
+			}
+		})
+	}
+}
 
 func TestLegacyMigrationPreservesStateAndBacksUpOnce(t *testing.T) {
 	for _, position := range []bool{true, false} {

@@ -17,7 +17,7 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-const schemaVersion = 41
+const schemaVersion = 43
 
 func (s *Store) migrate(dir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -65,7 +65,9 @@ func (s *Store) migrate(dir string) error {
 			goose.NewGoMigration(33, &goose.GoFunc{RunTx: partyFileScopeIndex}, nil),
 			goose.NewGoMigration(35, &goose.GoFunc{RunTx: addAccountOnboarding}, nil),
 			goose.NewGoMigration(39, &goose.GoFunc{RunTx: addReadBoundaries}, nil),
-			goose.NewGoMigration(40, &goose.GoFunc{RunTx: addLinkMediaEviction}, nil)))
+			goose.NewGoMigration(40, &goose.GoFunc{RunTx: addLinkMediaEviction}, nil),
+			goose.NewGoMigration(42, &goose.GoFunc{RunTx: addOutboxDelivery}, nil),
+			goose.NewGoMigration(43, &goose.GoFunc{RunTx: bindOutboxRoutes}, nil)))
 	if err != nil {
 		return err
 	}
@@ -80,6 +82,18 @@ func (s *Store) migrate(dir string) error {
 		return fmt.Errorf("migrate database: %w", err)
 	}
 	return nil
+}
+
+func addOutboxDelivery(ctx context.Context, tx *sql.Tx) error {
+	if err := addMissingColumn(ctx, tx, "outbox", "attempted_ns", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, "CREATE INDEX IF NOT EXISTS outbox_delivery ON outbox(owner,state,created_ns,client_id)")
+	return err
+}
+
+func bindOutboxRoutes(ctx context.Context, tx *sql.Tx) error {
+	return addMissingColumn(ctx, tx, "outbox", "route_key", "TEXT NOT NULL DEFAULT ''")
 }
 
 // Legacy databases can contain newer columns without a migration ledger.

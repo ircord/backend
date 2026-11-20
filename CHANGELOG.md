@@ -20,6 +20,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 
 ### Fixed
 
+- Messages stay in your outbox through reloads and reconnects until the server confirms them or you remove them.
 - Switching servers returns to the last channel you viewed there, even after reloading IRCord.
 - Keyboard shortcuts such as Ctrl/⌘ G for GIFs, and typing anywhere to start a message, work again.
 - A second click on a menu button, such as the three-dot options button, now closes its menu instead of opening it again.

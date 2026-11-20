@@ -26,11 +26,17 @@ const { t, n, locale } = useI18n()
 const { day, time } = useTimeFormat()
 const history = useQuery(() => messagesQuery(chat.activeId))
 /** Deleted (redacted) messages leave the timeline entirely; replies still quote them as deleted. */
-const messages = computed(() =>
-  [...(history.data.value?.items ?? []), ...(chat.outbox[chat.activeId] ?? [])].filter(
-    (message) => message.kind !== 'system' && !message.deleted,
-  ),
-)
+const messages = computed(() => {
+  const retained = chat.outbox[chat.activeId] ?? []
+  const historyItems = history.data.value?.items ?? []
+  const isConfirmed = (m: Message) => m.confirmed || (!m.unconfirmed && !!m.upstreamId)
+  const confirmed = new Set(historyItems.filter(isConfirmed).map((m) => m.clientId))
+  const unresolved = new Set(retained.map((m) => m.clientId))
+  return [
+    ...historyItems.filter((m) => isConfirmed(m) || !unresolved.has(m.clientId)),
+    ...retained.filter((m) => !confirmed.has(m.clientId)),
+  ].filter((message) => message.kind !== 'system' && !message.deleted)
+})
 const preferences = usePreferencesStore()
 const appearance = useAppearanceStore()
 const notifications = useNotificationStore()

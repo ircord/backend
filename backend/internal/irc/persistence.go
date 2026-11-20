@@ -22,7 +22,7 @@ func (w *workspace) commandUncertain(clientID, message string) {
 	if w.store != nil {
 		_ = w.store.UncertainCommand(w.ownerID, clientID, message)
 	}
-	w.commandError(clientID, message)
+	w.sendCommandError(clientID, message)
 }
 
 func (w *workspace) load() {

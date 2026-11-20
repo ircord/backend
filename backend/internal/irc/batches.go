@@ -61,6 +61,9 @@ func (c *connection) receiveMultiline(e girc.Event) bool {
 						b.first.Tags[key] = value
 					}
 				}
+				if label := c.batchLabels[opening.Tags["batch"]]; b.first.Tags["label"] == "" && label != "" {
+					b.first.Tags["label"] = label
+				}
 			} else if _, concat := e.Tags["draft/multiline-concat"]; !concat {
 				b.text += "\n"
 			}

@@ -270,7 +270,7 @@ function react(item: EmojiItem) {
       'is-highlighted': highlighted,
       'is-attract': attract === 'row' || attract === 'both',
       'is-mention': mentionsMe,
-      'is-pending': message.delivery === 'pending',
+      'is-pending': message.delivery === 'pending' || message.delivery === 'queued',
       'is-failed': message.delivery === 'failed',
       'is-mine': message.senderId === 'you',
       'is-action': action,

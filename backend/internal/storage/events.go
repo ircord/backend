@@ -50,16 +50,19 @@ func (s *Store) Commit(owner, kind string, data any) (model.Event, error) {
 			if _, err = tx.Exec("DELETE FROM invitations WHERE owner=? AND network=?", owner, v.ID); err != nil {
 				return model.Event{}, err
 			}
-			for _, table := range []string{"messages", "outbox", "history_state", "conversation_read", "reactions", "message_mentions", "message_links"} {
-				if _, err = tx.Exec("DELETE FROM "+table+" WHERE owner=? AND conversation IN (SELECT id FROM entities WHERE owner=? AND kind='conversation' AND json_extract(payload,'$.networkId')=?)", owner, owner, v.ID); err != nil {
+			for _, table := range []string{"messages", "history_state", "conversation_read", "reactions", "message_mentions", "message_links"} {
+				if _, err = tx.Exec("DELETE FROM "+table+" WHERE "+openNetworkConversations, owner, owner, v.ID); err != nil {
 					return model.Event{}, err
 				}
 				// A conversation closed earlier has no entity left, but its ID still
 				// names the network: the network ID, "_", then 24 hex digits. The
 				// range ("_" is 0x5F, "`" is 0x60) keeps the (owner, conversation) index.
-				if _, err = tx.Exec("DELETE FROM "+table+" WHERE owner=? AND conversation > ?||'_' AND conversation < ?||'`' AND length(conversation)=length(?)+25 AND substr(conversation,length(?)+2) NOT GLOB '*[^0-9a-f]*'", owner, v.ID, v.ID, v.ID, v.ID); err != nil {
+				if _, err = tx.Exec("DELETE FROM "+table+" WHERE "+closedNetworkConversations, owner, v.ID, v.ID, v.ID, v.ID); err != nil {
 					return model.Event{}, err
 				}
+			}
+			if err := removeNetworkSends(tx, owner, v.ID); err != nil {
+				return model.Event{}, err
 			}
 			// Bookmarks name their network directly, so ones into conversations closed
 			// earlier (whose entity is already gone) are removed too.
@@ -183,10 +186,10 @@ func (s *Store) Commit(owner, kind string, data any) (model.Event, error) {
 		}
 		if v.ClientID != "" {
 			state := "sent"
-			if v.UpstreamID == "" {
+			if v.Unconfirmed || v.UpstreamID == "" && !v.Receipt {
 				state = "unconfirmed"
 			}
-			if _, err = tx.Exec("UPDATE outbox SET state=?,message_id=? WHERE owner=? AND client_id=?", state, v.ID, owner, v.ClientID); err != nil {
+			if _, err = tx.Exec("UPDATE outbox SET state=?,message_id=?,error='' WHERE owner=? AND client_id=? AND state NOT IN ('discarded','sent')", state, v.ID, owner, v.ClientID); err != nil {
 				return model.Event{}, err
 			}
 		}

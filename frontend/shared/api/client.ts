@@ -399,10 +399,33 @@ export function createIRCordClient(apiBase: string, options: ClientOptions = {})
           params: { path: { id }, query: { reason } },
         }),
       ),
-    sendMessage: (id: string, body: Body<'/api/v1/conversations/{id}/messages', 'post'>) =>
-      read(client.POST('/api/v1/conversations/{id}/messages', { params: { path: { id } }, body })),
-    command: (clientId: string) =>
-      read(client.GET('/api/v1/commands/{clientId}', { params: { path: { clientId } } })),
+    sendMessage: (
+      id: string,
+      body: Body<'/api/v1/conversations/{id}/messages', 'post'>,
+      signal?: AbortSignal,
+    ) =>
+      read(
+        client.POST('/api/v1/conversations/{id}/messages', {
+          params: { path: { id } },
+          body,
+          signal,
+        }),
+      ),
+    command: (clientId: string, signal?: AbortSignal) =>
+      read(client.GET('/api/v1/commands/{clientId}', { params: { path: { clientId } }, signal })),
+    outbox: (query: { after?: string; afterId?: string } = {}, signal?: AbortSignal) =>
+      read(client.GET('/api/v1/outbox', { params: { query }, signal })),
+    retrySend: (clientId: string, acceptDuplicate = false) =>
+      read(
+        client.POST('/api/v1/commands/{clientId}/retry', {
+          params: { path: { clientId } },
+          body: { acceptDuplicate },
+        }),
+      ),
+    checkSend: (clientId: string) =>
+      read(client.POST('/api/v1/commands/{clientId}/check', { params: { path: { clientId } } })),
+    discardSend: (clientId: string) =>
+      empty(client.DELETE('/api/v1/commands/{clientId}', { params: { path: { clientId } } })),
     react: (id: string, body: Body<'/api/v1/conversations/{id}/reactions', 'post'>) =>
       read(client.POST('/api/v1/conversations/{id}/reactions', { params: { path: { id } }, body })),
     attract: (id: string) =>

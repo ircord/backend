@@ -56,6 +56,10 @@ type connection struct {
 	searchQuarantined      bool
 	historyScheduler       *historyScheduler
 	pending                map[string]pending
+	outboundWrites         map[*girc.Event]outboundWrite
+	outboxWake             chan struct{}
+	outboxScan             bool
+	outboxCheck            bool
 	batches                map[string]*multiline
 	historyBatches         map[string]bool
 	// botTagged is set once the server has sent a bot tag; only then does a
@@ -169,7 +173,7 @@ func (c *connection) writer() {
 			c.mu.Lock()
 			expired := []string{}
 			for id, p := range c.pending {
-				if time.Since(p.at) > 15*time.Second {
+				if !p.at.IsZero() && time.Since(p.at) > 15*time.Second {
 					delete(c.pending, id)
 					expired = append(expired, id)
 				}
@@ -177,9 +181,12 @@ func (c *connection) writer() {
 			c.mu.Unlock()
 			c.owner.mu.Lock()
 			for _, id := range expired {
-				c.owner.commandUncertain(id, "IRC did not acknowledge this message. Check the conversation before retrying.")
+				c.owner.commandUncertain(id, "IRC has not confirmed this message.")
 			}
 			c.owner.mu.Unlock()
+			if len(expired) != 0 {
+				c.wakeOutbox(true)
+			}
 		case events := <-c.queue:
 			// Remove queue tracking immediately, including when cancellation
 			// interrupts the writer before its next send tick.
@@ -188,6 +195,11 @@ func (c *connection) writer() {
 			searchWrites := make([]*searchRequest, len(events))
 			queuedClients := make([]*girc.Client, len(events))
 			c.mu.Lock()
+			var send outboundWrite
+			if len(events) != 0 {
+				send = c.outboundWrites[events[0]]
+				delete(c.outboundWrites, events[0])
+			}
 			for i, event := range events {
 				rawWrites[i] = c.takeRawHistoryWrite(event)
 				historyWrites[i] = c.takeHistoryWrite(event)
@@ -197,7 +209,7 @@ func (c *connection) writer() {
 				delete(c.queuedClients, event)
 			}
 			c.mu.Unlock()
-			sent := false
+			written := 0
 			for i, event := range events {
 				select {
 				case <-c.ctx.Done():
@@ -219,13 +231,18 @@ func (c *connection) writer() {
 				}
 				if c.owner.ownerID != partyControlOwner && len(event.Params) > 0 && c.managedPartyTarget(event.Params[0]) && event.Command != "PART" {
 					if c.partyTargetAccess(event.Params[0]) != nil {
-						c.rejectPartySend(events, sent)
+						if send.clientID != "" {
+							c.rejectOutboundPartySend(send, written > 0)
+						}
 						break
 					}
 				}
 				c.mu.Lock()
 				ready = c.ready && c.client == client && c.transportAliveLocked() &&
 					c.startRawHistoryWrite(rawWrites[i], client) && c.startHistoryWrite(historyWrites[i], client) && c.startSearchWrite(searchWrites[i], client)
+				if ready && i == 0 && send.clientID != "" {
+					ready = c.startOutboundWriteLocked(send)
+				}
 				c.mu.Unlock()
 				if !ready {
 					break
@@ -234,8 +251,11 @@ func (c *connection) writer() {
 					c.capture(*event, true)
 				}
 				client.Send(event)
-				sent = true
+				written++
 				c.recordSentProfile(event)
+			}
+			if send.clientID != "" {
+				c.finishOutboundWrite(send, written, len(events))
 			}
 		}
 	}
@@ -478,8 +498,10 @@ func (c *connection) run() {
 		}
 		c.owner.networks[n.ID] = n
 		c.owner.emit("network.updated", n)
-		for clientID := range pendingCommands {
-			c.owner.commandUncertain(clientID, "IRC disconnected before acknowledging this message.")
+		for clientID, command := range pendingCommands {
+			if !command.at.IsZero() {
+				c.owner.commandUncertain(clientID, "IRC disconnected before confirming this message.")
+			}
 		}
 		c.owner.mu.Unlock()
 		c.drainQueue()
@@ -512,6 +534,7 @@ func (c *connection) drainQueue() {
 				c.takeHistoryWrite(event)
 				delete(c.searchWrites, event)
 				delete(c.queuedClients, event)
+				delete(c.outboundWrites, event)
 			}
 			c.mu.Unlock()
 		default:
@@ -607,6 +630,7 @@ func (c *connection) connectedAttempt(attemptCtx context.Context, client *girc.C
 	c.nicks[c.fold(n.Nick)] = w.self.ID
 	w.mu.Unlock()
 	c.connectionState("connected", client, nil)
+	c.wakeOutbox(true)
 	if c.manager.parties != nil && c.owner.ownerID != partyControlOwner {
 		select {
 		case c.manager.parties.wake <- struct{}{}:

@@ -205,9 +205,12 @@ func (m *Manager) connect(owner string, cfg NetworkConfig, restored bool) (Netwo
 		return Network{}, ErrStorage
 	}
 	m.connectionCount++
-	m.wg.Add(2)
+	c.outboxWake = make(chan struct{}, 1)
+	c.workers.Add(1)
+	m.wg.Add(3)
 	go c.run()
 	go c.writer()
+	go c.runOutbox()
 	return clone(n), nil
 }
 

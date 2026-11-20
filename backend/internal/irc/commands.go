@@ -109,6 +109,10 @@ func (c *connection) receiveCommandFailure(e girc.Event) {
 	if label == "" {
 		label = c.batchLabels[e.Tags["batch"]]
 	}
+	sendID, _, send := c.pendingForLabelLocked(label)
+	if send {
+		delete(c.pending, sendID)
+	}
 	_, pending := c.pending[label]
 	if pending {
 		delete(c.pending, label)
@@ -121,9 +125,14 @@ func (c *connection) receiveCommandFailure(e girc.Event) {
 	if consumed {
 		return
 	}
+	if !send && strings.HasPrefix(label, "send:") {
+		return
+	}
 	w := c.owner
 	w.mu.Lock()
-	if raw {
+	if send {
+		w.commandError(sendID, reason)
+	} else if raw {
 		w.sendCommandError(rawClientID, reason)
 	} else if strings.HasPrefix(label, "raw:") {
 		w.sendCommandError(strings.TrimPrefix(label, "raw:"), reason)

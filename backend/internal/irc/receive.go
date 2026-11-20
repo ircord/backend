@@ -93,7 +93,9 @@ func (c *connection) receive(client *girc.Client, e girc.Event) {
 	case "REDACT":
 		c.redact(e)
 	case "ACK":
-		c.redactionResult(c.eventLabel(e), "")
+		label := c.eventLabel(e)
+		c.acknowledgeOutbound(label)
+		c.redactionResult(label, "")
 	case "433":
 		c.nicknameConflict(client, e)
 	case "FAIL", "400", "401", "403", "404", "405", "407", "411", "412", "417", "421", "442", "443", "471", "472", "473", "474", "475", "477", "478", "482":
