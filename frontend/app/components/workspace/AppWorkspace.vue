@@ -489,21 +489,25 @@ watch([mobileNav, mobileMembers], async ([nav, members], [wasNav, wasMembers]) =
     drawerOpener = null
   }
 })
+const canOpenNav = () => !sidebarDocked.value && !overlay.value
+const canOpenMembers = () =>
+  !membersDocked.value &&
+  !overlay.value &&
+  chat.active?.kind === 'channel' &&
+  !chat.active.party &&
+  !chat.serverView
 useTouchGestures({
   openNav: () => {
-    if (!sidebarDocked.value) mobileNav.value = true
+    if (canOpenNav()) mobileNav.value = true
   },
   openMembers: () => {
-    if (
-      !membersDocked.value &&
-      chat.active?.kind === 'channel' &&
-      !chat.active.party &&
-      !chat.serverView
-    )
-      mobileMembers.value = true
+    if (canOpenMembers()) mobileMembers.value = true
   },
   closeDrawers,
-  drawerOpen: () => mobileNav.value || mobileMembers.value,
+  canOpenNav,
+  canOpenMembers,
+  navOpen: () => mobileNav.value,
+  membersOpen: () => mobileMembers.value,
 })
 useWorkspaceShortcuts({
   escape: () => {
