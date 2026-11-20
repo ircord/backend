@@ -93,6 +93,15 @@ const reactionSupported = computed(() => chat.messageActionSupported(props.messa
 const replySupported = computed(() => chat.messageActionSupported(props.message, 'replies'))
 const reactionReason = computed(() => chat.messageActionReason(props.message, 'reactions'))
 const replyReason = computed(() => chat.messageActionReason(props.message, 'replies'))
+/** A sent message that can take a reply now: a left swipe on a touch screen starts one. */
+const swipeReply = computed(
+  () =>
+    replySupported.value &&
+    !replyReason.value &&
+    !props.message.delivery &&
+    !props.message.deleted &&
+    !editing.value,
+)
 watch(reactionReason, (reason) => {
   if (reason) reacting.value = false
 })
@@ -271,6 +280,8 @@ function react(item: EmojiItem) {
       'show-actions': reacting,
     }"
     :aria-label="rowLabel"
+    :data-swipe-reply="swipeReply || undefined"
+    @swipe-reply="swipeReply && emit('reply', message)"
     @contextmenu="messageMenu($event)"
     @pointerover="hovered = $event.pointerType !== 'touch'"
     @pointerleave="hovered = false"
@@ -278,6 +289,18 @@ function react(item: EmojiItem) {
     @focusout="trackFocus"
     @pointerdown="focus !== 'none' && (focus = 'row')"
   >
+    <!-- Slides in while the row is swiped left on a touch screen (useTouchGestures), and
+         settles, filled, once letting go would reply. Only present during a swipe, and its
+         slide stays inside the row: anything past the edge would make the timeline scroll
+         sideways. -->
+    <span
+      v-if="swipeReply"
+      class="swipe-reply-icon pointer-events-none absolute top-1/2 right-6 hidden size-8 place-items-center rounded-full bg-primary/15 text-primary opacity-[var(--swipe-progress,0)] [transition:background-color_0.12s,color_0.12s,scale_0.12s] [transform:translate(calc(var(--swipe-offset,0px)_+_(1_-_var(--swipe-progress,0))_*_12px),-50%)] [[data-swiping]>&]:grid [[data-swipe-ready]>&]:scale-115 [[data-swipe-ready]>&]:bg-primary [[data-swipe-ready]>&]:text-primary-foreground"
+      aria-hidden="true"
+      ><AppIcon
+        name="reply"
+        :size="16"
+    /></span>
     <div
       v-if="message.replyTo"
       class="message-reply flex items-center gap-1.5 pt-0 pr-0 pb-0.5 pl-13.5 text-faint text-[12px] min-w-0 relative"

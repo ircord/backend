@@ -505,7 +505,6 @@ useTouchGestures({
   },
   closeDrawers,
   canOpenNav,
-  canOpenMembers,
   navOpen: () => mobileNav.value,
   membersOpen: () => mobileMembers.value,
 })

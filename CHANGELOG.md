@@ -10,7 +10,8 @@ What changed for people using IRCord, newest release first. Each release lists w
 - On phones, the status bar takes the top bar's color, and the top bar and conversation header are shorter, so more messages fit. Network tabs show their connection dot on the network icon, and networks without an icon get a pattern made from their name.
 - Menus have a new look: a raised panel, a soft highlight, icons and red danger actions. Your user menu shows your profile and status at the top.
 - On phones, Settings opens on its list of sections, and each section fills the screen under a slim bar with Back. Sliders and choices sit under their names instead of squeezing them. Administration and channel settings work the same way, and every section in all three now has a colored icon.
-- On phones, swipe right anywhere in a conversation to open the conversation list, and left for the member list. The panel follows your finger, and a swipe the other way closes it.
+- On phones, swipe right anywhere in a conversation to open the conversation list. It follows your finger, and a swipe left closes it.
+- On phones, swipe a message to the left to reply to it. Once the reply icon settles and your phone ticks, let go to reply.
 
 ### Fixed
 

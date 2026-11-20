@@ -5,8 +5,12 @@ import { isEditable } from '../../../shared/utils/focus'
  * - Long-press opens the same context menus as right-click (iOS Safari never fires
  *   `contextmenu`; Android does, so the native event is used when it arrives first).
  * - A sideways swipe anywhere in the workspace moves a drawer with the finger: right opens
- *   navigation (or closes the member list), left opens the member list (or closes navigation).
+ *   navigation or closes the member list, left closes navigation. The member list opens only
+ *   from its button, so a stray swipe never covers the conversation with it.
  *   Content that scrolls sideways and text fields keep their own swipes.
+ * - Swiping a message left (`data-swipe-reply`) slides it and brings in a reply icon; past the
+ *   threshold the icon settles and the phone ticks, and releasing there sends the row a
+ *   `swipe-reply` event.
  * - On iOS the visual viewport shrinks for the keyboard while 100dvh does not; --app-height
  *   follows the visual viewport so the composer stays above the keyboard.
  */
@@ -14,9 +18,8 @@ export function useTouchGestures(options: {
   openNav: () => void
   openMembers: () => void
   closeDrawers: () => void
-  /** Whether each drawer can open now (it is not docked, and the view has one). */
+  /** Whether navigation can open now (it is not docked, and no dialog is open). */
   canOpenNav: () => boolean
-  canOpenMembers: () => boolean
   navOpen: () => boolean
   membersOpen: () => boolean
 }) {
@@ -39,6 +42,11 @@ export function useTouchGestures(options: {
   } | null = null
   /** Set once a swipe is known to be vertical (scrolling) or claimed by other content. */
   let ignored = false
+  /**
+   * A message sliding left to reply. `at` is how far it must go (a quarter of the row, at least
+   * 80px); `ready` once it got there, when the icon settles in place and the phone ticks.
+   */
+  let slide: { el: HTMLElement; origin: number; at: number; ready: boolean } | null = null
 
   function cancel() {
     clearTimeout(timer)
@@ -47,8 +55,47 @@ export function useTouchGestures(options: {
   function pointerCancel() {
     cancel()
     if (drag) settle(drag.wasOpen)
+    if (slide) release(false)
     start = null
     longPressed = false
+  }
+  /** Moves the message with the finger, slowing past the threshold so it never runs away. */
+  function moveSlide(dx: number) {
+    if (!slide) return
+    const { at } = slide
+    const pulled = Math.max(0, slide.origin - dx)
+    const offset = pulled <= at ? pulled : at + (pulled - at) * 0.3
+    slide.el.style.transform = `translateX(${-offset}px)`
+    // The reply icon inside the row cancels the slide, so it stays where the row was.
+    slide.el.style.setProperty('--swipe-offset', `${offset}px`)
+    slide.el.style.setProperty('--swipe-progress', String(Math.min(1, pulled / at)))
+    const ready = pulled >= at
+    if (ready !== slide.ready) {
+      if (ready) navigator.vibrate?.(10)
+      slide.el.toggleAttribute('data-swipe-ready', ready)
+    }
+    slide.ready = ready
+  }
+  /** Lets the message return; past the threshold it asks its row to start a reply. */
+  function release(reply: boolean) {
+    const s = slide
+    slide = null
+    if (!s) return
+    const reduced = document.documentElement.dataset.motion === 'reduced'
+    s.el.style.transition = reduced ? 'none' : 'transform 0.18s ease-out'
+    s.el.style.transform = 'translateX(0)'
+    s.el.style.setProperty('--swipe-offset', '0px')
+    s.el.style.setProperty('--swipe-progress', '0')
+    s.el.removeAttribute('data-swipe-ready')
+    if (reply) s.el.dispatchEvent(new CustomEvent('swipe-reply'))
+    setTimeout(
+      () => {
+        for (const name of ['transition', 'transform', '--swipe-offset', '--swipe-progress'])
+          s.el.style.removeProperty(name)
+        s.el.removeAttribute('data-swiping')
+      },
+      reduced ? 0 : 200,
+    )
   }
   function pointerDown(event: PointerEvent) {
     if (event.pointerType !== 'touch') return
@@ -99,9 +146,7 @@ export function useTouchGestures(options: {
       ? dx < 0 && 'nav'
       : membersOpen
         ? dx > 0 && 'members'
-        : dx > 0
-          ? options.canOpenNav() && 'nav'
-          : options.canOpenMembers() && 'members'
+        : dx > 0 && options.canOpenNav() && 'nav'
     if (!side) return null
     const el = document.querySelector<HTMLElement>(
       side === 'nav' ? '.conversation-sidebar' : '.member-sidebar',
@@ -155,10 +200,23 @@ export function useTouchGestures(options: {
       place(drag, progress(drag, dx))
       return
     }
+    if (slide) return moveSlide(dx)
     if (ignored || longPressed || Math.hypot(dx, dy) <= SLOP) return
     // Mostly vertical is scrolling; it stays that way for the rest of the touch.
     if (Math.abs(dx) < Math.abs(dy) * 1.2 || claimed(start.target)) {
       ignored = true
+      return
+    }
+    // Leftward on a message replies to it, unless a drawer is open.
+    const row =
+      dx < 0 &&
+      !options.navOpen() &&
+      !options.membersOpen() &&
+      start.target.closest<HTMLElement>('[data-swipe-reply]')
+    if (row) {
+      slide = { el: row, origin: dx, at: Math.max(80, row.offsetWidth / 4), ready: false }
+      row.style.transition = 'none'
+      row.setAttribute('data-swiping', '')
       return
     }
     drag = begin(dx)
@@ -167,6 +225,7 @@ export function useTouchGestures(options: {
   function pointerUp(event: PointerEvent) {
     if (event.pointerType !== 'touch' || !start) return
     cancel()
+    if (slide) release(slide.ready)
     if (drag) {
       const amount = progress(drag, event.clientX - start.x)
       // A flick decides by direction; otherwise past a third open stays open.
