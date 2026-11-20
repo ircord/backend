@@ -20,10 +20,13 @@ provide(
   <div
     :class="
       cn(
+        'setting-row flex items-center justify-between gap-4',
         // Phones: a wide control (slider, choices) wraps under the text instead of squeezing
-        // it; a switch still fits beside it.
-        'setting-row flex items-center justify-between gap-4 max-[700px]:flex-wrap max-[700px]:gap-y-2.5',
-        stacked && 'stacked flex-col items-stretch gap-2.5',
+        // it; a switch still fits beside it. A stacked row is a column already: wrapping a
+        // column spreads its children apart.
+        stacked
+          ? 'stacked flex-col items-stretch gap-2.5'
+          : 'max-[700px]:flex-wrap max-[700px]:gap-y-2.5',
       )
     "
   >
