@@ -27,10 +27,38 @@ function change(value: boolean) {
   open.value = value
   if (!value) hover = false
 }
+/** Phones get the shared menu, which opens as a sheet from the bottom. */
+const phone = useMediaQuery('(max-width: 700px)')
+const contextMenu = useContextMenu()
+function openSheet(event: MouseEvent) {
+  contextMenu.open(
+    event,
+    [
+      { label: t('channelCreate.joinExisting'), icon: 'hash', action: () => emit('join') },
+      { label: t('channelCreate.title'), icon: 'plus', action: () => actions.createChannel() },
+    ],
+    t('channelCreate.menu'),
+  )
+}
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
 <template>
+  <UiButton
+    v-if="phone"
+    variant="ghost"
+    size="icon-sm"
+    class="size-[22px]"
+    :aria-label="t('channelCreate.menu')"
+    aria-haspopup="menu"
+    @click="openSheet"
+  >
+    <AppIcon
+      name="plus"
+      :size="14"
+    />
+  </UiButton>
   <UiDropdownMenu
+    v-else
     :open="open"
     :modal="false"
     @update:open="change"

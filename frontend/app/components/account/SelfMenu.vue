@@ -10,6 +10,8 @@ const actions = useWorkspaceActions()
 const menus = useMenus()
 const { t } = useI18n()
 const menuOpen = ref(false)
+/** Phones get the menu as a sheet from the bottom. */
+const phone = useMediaQuery('(max-width: 700px)')
 const editorOpen = ref(false)
 const editorNetwork = ref('')
 const pending = ref(false)
@@ -90,8 +92,9 @@ async function toggleAway() {
     <PopoverAnchor as-child>
       <span class="inline-flex">
         <UiDropdownMenu
-          v-model:open="menuOpen"
+          :open="menuOpen && !phone"
           :modal="false"
+          @update:open="(open) => (menuOpen = open)"
         >
           <UiDropdownMenuTrigger as-child>
             <button
@@ -254,6 +257,87 @@ async function toggleAway() {
             >
           </UiDropdownMenuContent>
         </UiDropdownMenu>
+        <AppSheet
+          v-if="phone && menuOpen"
+          :title="chat.self?.displayName || t('selfMenu.you')"
+          :description="`${chat.network?.name || t('selfMenu.noNetwork')} · ${presence}`"
+          @close="menuOpen = false"
+        >
+          <template #leading>
+            <UserAvatar
+              :member="displayMember"
+              size="normal"
+              presence
+              class="[&_.presence]:border-popover"
+            />
+          </template>
+          <div class="sheet-card">
+            <SheetItem
+              :label="hasStatus ? (chat.self?.statusText ?? '') : t('selfMenu.setStatus')"
+              :icon="hasStatus && chat.self?.statusEmoji ? undefined : 'smile'"
+              :disabled="!chat.networkId"
+              @click="openEditor"
+            >
+              <template
+                v-if="hasStatus && chat.self?.statusEmoji"
+                #icon
+                ><span
+                  class="inline-flex size-5 items-center justify-center overflow-hidden text-[18px] leading-none [&_img]:size-5 [&_img]:object-contain"
+                  ><StatusEmoji :value="chat.self.statusEmoji" /></span
+              ></template>
+            </SheetItem>
+            <SheetItem
+              v-if="hasStatus"
+              :label="t('selfMenu.clearStatus')"
+              icon="close"
+              :disabled="pending"
+              @click="clearStatus"
+            />
+          </div>
+          <div class="sheet-card">
+            <SheetItem
+              :label="t('selfMenu.viewProfile')"
+              icon="user"
+              @click="run(() => actions.profile('you'))"
+            />
+            <SheetItem
+              :label="t('selfMenu.profileSettings')"
+              icon="pencil"
+              @click="run(() => actions.settings('profile'))"
+            />
+            <SheetItem
+              :label="chat.self?.status === 'away' ? t('selfMenu.setBack') : t('selfMenu.setAway')"
+              :icon="chat.self?.status === 'away' ? 'sun' : 'moon'"
+              :disabled="!connected || pending"
+              @click="toggleAway"
+            />
+          </div>
+          <div class="sheet-card">
+            <SheetItem
+              :label="t('selfMenu.preferences')"
+              icon="settings"
+              @click="run(() => actions.settings())"
+            />
+            <SheetItem
+              :label="t('selfMenu.notifications')"
+              icon="bell"
+              @click="run(() => actions.settings('notifications'))"
+            />
+            <SheetItem
+              :label="t('selfMenu.accountSettings')"
+              icon="key"
+              @click="run(() => actions.settings('account'))"
+            />
+          </div>
+          <div class="sheet-card">
+            <SheetItem
+              :label="t('common.logOut')"
+              icon="logout"
+              danger
+              @click="run(() => void auth.confirmLogout())"
+            />
+          </div>
+        </AppSheet>
       </span>
     </PopoverAnchor>
     <UiPopoverContent

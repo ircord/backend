@@ -22,6 +22,13 @@ import { relativeTime } from '../../../shared/utils/devices'
 const props = defineProps<{ card: LinkCard }>()
 const emit = defineEmits<{ jump: [source: LinkSource] }>()
 const chat = useChatStore()
+/** Phones list a link's posts in a sheet from the bottom. */
+const phone = useMediaQuery('(max-width: 700px)')
+const postsOpen = ref(false)
+function jumpFromSheet(source: LinkSource) {
+  postsOpen.value = false
+  emit('jump', source)
+}
 const { t, n, locale } = useI18n()
 /** “3 days ago”: short enough to leave the author and channel room. The title has the date. */
 const ago = (iso: string) =>
@@ -259,7 +266,51 @@ const href = computed(() => (openableLink(props.card.url) ? props.card.url : und
           /><span class="min-w-0 truncate">{{ site }}</span></template
         >
         <!-- Repeated posts open as a menu, so a card never grows its grid row. -->
-        <UiDropdownMenu v-if="card.count > 1">
+        <template v-if="card.count > 1 && phone">
+          <UiButton
+            variant="link"
+            size="text"
+            class="catalog-card-count ml-auto h-auto shrink-0 p-0 text-[length:var(--ui-caption)]"
+            aria-haspopup="dialog"
+            @click="postsOpen = true"
+            >{{ t('mediaUi.linkCatalog.postedTimes', { count: n(card.count) }, card.count)
+            }}<AppIcon
+              name="down"
+              :size="12"
+          /></UiButton>
+          <AppSheet
+            v-if="postsOpen"
+            :title="$t('mediaUi.linkCatalog.postsOf', { title: linkTitle(card) })"
+            :description="
+              card.count > card.sources.length
+                ? t(
+                    'mediaUi.linkCatalog.earlierPosts',
+                    { count: n(card.count - card.sources.length) },
+                    card.count - card.sources.length,
+                  )
+                : undefined
+            "
+            @close="postsOpen = false"
+          >
+            <div class="sheet-card">
+              <SheetItem
+                v-for="source in card.sources"
+                :key="source.messageId"
+                :label="`${author(source)} · ${place(source)}`"
+                :detail="source.excerpt"
+                :hint="when(source.postedAt)"
+                @click="jumpFromSheet(source)"
+              >
+                <template #icon
+                  ><UserAvatar
+                    :member="chat.member(source.senderId, source.networkId)"
+                    size="small"
+                /></template>
+              </SheetItem>
+            </div>
+          </AppSheet>
+        </template>
+        <UiDropdownMenu v-else-if="card.count > 1">
           <UiDropdownMenuTrigger as-child>
             <UiButton
               variant="link"
