@@ -9,7 +9,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 
 - On phones, the status bar takes the top bar's color, and the top bar and conversation header are shorter, so more messages fit. Network tabs show their connection dot on the network icon, and networks without an icon get a pattern made from their name.
 - Menus have a new look: a raised panel, a soft highlight, icons and red danger actions. Your user menu shows your profile and status at the top.
-- On phones, Settings opens on its list of sections, and each section fills the screen under a slim bar with Back. Sliders and choices sit under their names instead of squeezing them. Administration and channel settings work the same way.
+- On phones, Settings opens on its list of sections, and each section fills the screen under a slim bar with Back. Sliders and choices sit under their names instead of squeezing them. Administration and channel settings work the same way, and every section in all three now has a colored icon.
 
 ### Fixed
 

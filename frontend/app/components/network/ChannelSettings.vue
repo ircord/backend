@@ -2,6 +2,7 @@
 import { channelRights, topPrefix } from '../../../shared/utils/irc'
 import { listInfo, parseChanmodes } from '../../../shared/utils/channel-modes'
 import type { components } from '../../../shared/generated/api'
+import type { NavTone } from '../../../shared/settings-index'
 
 /** Channel settings frame. Each section owns its forms and permission checks. */
 const props = defineProps<{ conversationId: string; initialTab?: string }>()
@@ -36,14 +37,46 @@ watch(
   },
   { immediate: true },
 )
-const tabs = computed(() => [
-  { id: 'overview', label: t('collectionsUi.channel.settings.overview') },
-  { id: 'modes', label: t('collectionsUi.channel.settings.modes') },
-  { id: 'registration', label: t('collectionsUi.channel.settings.registration') },
-  ...(guideListing.value?.available ? [{ id: 'guide', label: t('channelGuide.listing.tab') }] : []),
+/** Icons for the usual list modes: bans, their exceptions, invite exceptions and quiets. */
+const listIcons: Record<string, { icon: string; tone: NavTone }> = {
+  b: { icon: 'gavel', tone: 'red' },
+  e: { icon: 'check', tone: 'green' },
+  I: { icon: 'mail', tone: 'cyan' },
+  q: { icon: 'muted', tone: 'orange' },
+}
+const tabs = computed<{ id: string; label: string; icon: string; tone: NavTone }[]>(() => [
+  {
+    id: 'overview',
+    label: t('collectionsUi.channel.settings.overview'),
+    icon: 'hash',
+    tone: 'blue',
+  },
+  {
+    id: 'modes',
+    label: t('collectionsUi.channel.settings.modes'),
+    icon: 'filters',
+    tone: 'purple',
+  },
+  {
+    id: 'registration',
+    label: t('collectionsUi.channel.settings.registration'),
+    icon: 'key',
+    tone: 'yellow',
+  },
+  ...(guideListing.value?.available
+    ? [
+        {
+          id: 'guide',
+          label: t('channelGuide.listing.tab'),
+          icon: 'compass',
+          tone: 'pink' as const,
+        },
+      ]
+    : []),
   ...[...groups.value.list].map((mode) => ({
     id: `list:${mode}`,
     label: listLabels.value[mode]?.label ?? t('collectionsUi.channel.listModeFallback', { mode }),
+    ...(listIcons[mode] ?? { icon: 'lock', tone: 'blue' as const }),
   })),
 ])
 const listMode = computed(() => (tab.value.startsWith('list:') ? tab.value.slice(5) : ''))
@@ -82,6 +115,8 @@ const rankPhrase = (prefix: string) =>
         <SettingsNavItem
           v-for="item in tabs"
           :key="item.id"
+          :icon="item.icon"
+          :tone="item.tone"
           :active="tab === item.id"
           @click="tab = item.id"
           >{{ item.label }}</SettingsNavItem

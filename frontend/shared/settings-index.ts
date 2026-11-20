@@ -18,18 +18,63 @@ export const settingsGroups = [
   { id: 'server', name: 'settings.groups.server' },
 ] as const
 
+/** A palette hue for the tile behind a section's icon in the nav. */
+export type NavTone = 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'purple' | 'pink'
+
 /** In nav order. Each section has one task; every setting has one home in one of them. */
 export const settingsSections = [
-  { id: 'profile', name: 'settings.sections.profile', icon: 'user', group: 'user' },
-  { id: 'account', name: 'settings.sections.account', icon: 'key', group: 'user' },
-  { id: 'networks', name: 'settings.sections.networks', icon: 'globe', group: 'user' },
-  { id: 'appearance', name: 'settings.sections.appearance', icon: 'palette', group: 'app' },
-  { id: 'messages', name: 'settings.sections.messages', icon: 'message', group: 'app' },
-  { id: 'notifications', name: 'settings.sections.notifications', icon: 'bell', group: 'app' },
-  { id: 'privacy', name: 'settings.sections.privacy', icon: 'shield', group: 'app' },
-  { id: 'shortcuts', name: 'settings.sections.shortcuts', icon: 'keyboard', group: 'app' },
-  { id: 'emotes', name: 'settings.sections.emotes', icon: 'smile', group: 'server' },
-  { id: 'about', name: 'settings.sections.about', icon: 'info', group: 'server' },
+  { id: 'profile', name: 'settings.sections.profile', icon: 'user', tone: 'blue', group: 'user' },
+  { id: 'account', name: 'settings.sections.account', icon: 'key', tone: 'yellow', group: 'user' },
+  {
+    id: 'networks',
+    name: 'settings.sections.networks',
+    icon: 'globe',
+    tone: 'cyan',
+    group: 'user',
+  },
+  {
+    id: 'appearance',
+    name: 'settings.sections.appearance',
+    icon: 'palette',
+    tone: 'pink',
+    group: 'app',
+  },
+  {
+    id: 'messages',
+    name: 'settings.sections.messages',
+    icon: 'message',
+    tone: 'green',
+    group: 'app',
+  },
+  {
+    id: 'notifications',
+    name: 'settings.sections.notifications',
+    icon: 'bell',
+    tone: 'red',
+    group: 'app',
+  },
+  {
+    id: 'privacy',
+    name: 'settings.sections.privacy',
+    icon: 'shield',
+    tone: 'purple',
+    group: 'app',
+  },
+  {
+    id: 'shortcuts',
+    name: 'settings.sections.shortcuts',
+    icon: 'keyboard',
+    tone: 'orange',
+    group: 'app',
+  },
+  {
+    id: 'emotes',
+    name: 'settings.sections.emotes',
+    icon: 'smile',
+    tone: 'yellow',
+    group: 'server',
+  },
+  { id: 'about', name: 'settings.sections.about', icon: 'info', tone: 'blue', group: 'server' },
 ] as const
 
 export type SettingsSectionId = (typeof settingsSections)[number]['id']

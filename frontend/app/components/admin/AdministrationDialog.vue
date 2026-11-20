@@ -9,10 +9,10 @@ import { administrationAccessQuery } from '../../queries/administration'
  */
 const emit = defineEmits<{ close: [] }>()
 const sections = [
-  { id: 'status', name: 'administration.status', icon: 'monitor' },
-  { id: 'database', name: 'administration.database', icon: 'server' },
-  { id: 'users', name: 'administration.users', icon: 'users' },
-  { id: 'welcome', name: 'administration.welcome', icon: 'compass' },
+  { id: 'status', name: 'administration.status', icon: 'monitor', tone: 'blue' },
+  { id: 'database', name: 'administration.database', icon: 'server', tone: 'orange' },
+  { id: 'users', name: 'administration.users', icon: 'users', tone: 'green' },
+  { id: 'welcome', name: 'administration.welcome', icon: 'compass', tone: 'purple' },
 ] as const
 type Section = (typeof sections)[number]['id']
 const tab = ref<Section>('status')
@@ -59,6 +59,7 @@ const { t: $t } = useI18n()
             v-for="item in sections"
             :key="item.id"
             :icon="item.icon"
+            :tone="item.tone"
             :active="tab === item.id"
             @click="tab = item.id"
             >{{ $t(item.name) }}</SettingsNavItem

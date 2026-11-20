@@ -304,6 +304,7 @@ function keydown(event: KeyboardEvent) {
             v-for="item in group.sections"
             :key="item.id"
             :icon="item.icon"
+            :tone="item.tone"
             :active="!searching && tab === item.id"
             :data-section="item.id"
             @click="((query = ''), open(item.id))"
