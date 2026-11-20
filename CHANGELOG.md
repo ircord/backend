@@ -5,6 +5,8 @@ What changed for people using IRCord, newest release first. Each release lists w
 
 ## Unreleased
 
+## v0.7.1 — 2026-11-21
+
 ### Improved
 
 - IRCord groups read updates to the server and keeps chat responsive while it refreshes profiles after reconnecting.
