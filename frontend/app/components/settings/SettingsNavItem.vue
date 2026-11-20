@@ -7,7 +7,14 @@ import type { NavTone } from '../../../shared/settings-index'
  * item (Log out) sits apart at the end of the list. On phones, choosing a section opens it.
  * The icon sits on a small tile in the section's `tone`.
  */
-const props = defineProps<{ icon?: string; tone?: NavTone; active?: boolean; danger?: boolean }>()
+/** `detail` is the section's current value, shown before the chevron on phones. */
+const props = defineProps<{
+  icon?: string
+  tone?: NavTone
+  active?: boolean
+  danger?: boolean
+  detail?: string
+}>()
 const emit = defineEmits<{ click: [event: MouseEvent] }>()
 const pages = inject(settingsPagesKey, undefined)
 /**
@@ -68,11 +75,16 @@ watch(
         :name="icon"
         :size="16"
     /></span>
-    <slot /><AppIcon
+    <slot /><span
+      v-if="detail && pages"
+      class="ml-auto hidden min-w-0 max-w-[50%] truncate text-[13px] text-muted-foreground max-[700px]:block"
+      >{{ detail }}</span
+    ><AppIcon
       v-if="!danger && pages"
       name="right"
       :size="16"
-      class="ml-auto hidden shrink-0 text-faint max-[700px]:block"
+      class="hidden shrink-0 text-faint max-[700px]:block"
+      :class="{ 'ml-auto': !detail }"
     />
   </button>
 </template>

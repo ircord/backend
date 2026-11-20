@@ -180,7 +180,17 @@
   .appearance-preview {
     top: -12px;
   }
-  .layout-choices small {
+  /* Theme cards: a smaller thumbnail and just the name, about half as tall. */
+  .scheme-card .scheme-preview {
+    height: 44px;
+    padding: 4px;
+  }
+  .scheme-card .scheme-preview-main {
+    gap: 4px;
+    padding: 5px;
+  }
+  .layout-choices small,
+  .scheme-label small {
     position: absolute;
     width: 1px;
     height: 1px;

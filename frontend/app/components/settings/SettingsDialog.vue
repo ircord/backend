@@ -9,6 +9,7 @@ import {
   type SettingsAccess,
   type SettingsSectionId,
 } from '../../../shared/settings-index'
+import { schemeFamilies, schemeFor } from '../../../shared/schemes'
 
 /**
  * `initialTab` is a section id or a setting id from shared/settings-index.ts. Without one,
@@ -53,11 +54,42 @@ const mergedHeading =
   'mt-10 mb-4 text-[length:var(--ui-heading)] font-[650] tracking-[-0.01em] text-foreground'
 const tab = ref<SettingsSectionId>('appearance')
 const current = computed(() => settingsSections.find((t) => t.id === tab.value)!)
-const groups = settingsGroups.map((group) => ({
+/** Phone-sized touch screens leave out Shortcuts: keyboard shortcuts need a hardware keyboard. */
+const keyboardless = useMediaQuery('(max-width: 700px) and (pointer: coarse)')
+const listed = (id: SettingsSectionId) => !(keyboardless.value && id === 'shortcuts')
+const allGroups = settingsGroups.map((group) => ({
   ...group,
   headingId: useId(),
   sections: settingsSections.filter((s) => s.group === group.id),
 }))
+const groups = computed(() =>
+  allGroups
+    .map((group) => ({ ...group, sections: group.sections.filter((s) => listed(s.id)) }))
+    .filter((group) => group.sections.length),
+)
+/** On phones a few list entries show their current value: what you'd open the section to see. */
+const chat = useChatStore()
+const themes = useThemesStore()
+const levelLabels = {
+  all: 'workspaceUi.menus.allMessages',
+  mentions: 'workspaceUi.menus.onlyMentions',
+  none: 'workspaceUi.menus.mute',
+} as const
+const sectionValues = computed<Partial<Record<SettingsSectionId, string>>>(() => {
+  const settings = appearance.settings
+  const scheme = schemeFor(
+    appearance.mode === 'dark' ? settings.schemeDark : settings.schemeLight,
+    appearance.mode,
+  )
+  const theme = themes.kept?.name ?? schemeFamilies.find((f) => f.id === scheme.family)?.name
+  const networks = chat.data?.networks.length ?? 0
+  return {
+    appearance: [t(`appearance.modes.${settings.mode}`), theme].filter(Boolean).join(', '),
+    notifications: t(levelLabels[notifications.settings.channelDefault]),
+    profile: chat.self?.nick,
+    networks: networks ? t('settings.networkCount', { count: n(networks) }, networks) : undefined,
+  }
+})
 const content = ref<HTMLElement | null>(null)
 const title = ref<HTMLElement | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
@@ -119,7 +151,9 @@ const query = ref('')
 const active = ref(0)
 const listId = useId()
 const found = computed(() => searchSettings(query.value, access.value, messages))
-const results = computed<SettingResult[]>(() => found.value.results)
+const results = computed<SettingResult[]>(() =>
+  found.value.results.filter((result) => listed(result.entry.section)),
+)
 const truncated = computed(() => found.value.total > results.value.length)
 const searching = computed(() => query.value.trim().length > 0)
 const announcement = computed(() =>
@@ -305,6 +339,7 @@ function keydown(event: KeyboardEvent) {
             :key="item.id"
             :icon="item.icon"
             :tone="item.tone"
+            :detail="sectionValues[item.id]"
             :active="!searching && tab === item.id"
             :data-section="item.id"
             @click="((query = ''), open(item.id))"
