@@ -37,6 +37,7 @@ function forgetDevice(id?: string) {
         `ircord.picker.${id}.v1`,
         `ircord.${id}.search-recent`,
         `ircord.${id}.last-conversation`,
+        `ircord.${id}.last-channel-by-network`,
       ])
         localStorage.removeItem(name)
     localStorage.removeItem('ircord.recent')

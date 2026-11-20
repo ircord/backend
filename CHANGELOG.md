@@ -15,6 +15,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 
 ### Fixed
 
+- Switching servers returns to the last channel you viewed there, even after reloading IRCord.
 - A second click on a menu button, such as the three-dot options button, now closes its menu instead of opening it again.
 - On phones, choice lists in commands, such as when a status clears, now open next to the field instead of in the middle of the screen.
 

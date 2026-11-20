@@ -2,17 +2,21 @@ import type { ClientPreferences } from '../preferences'
 import type { Bootstrap, Conversation } from '../types/chat'
 import { channelTarget } from './irc'
 
+export function canRestoreChannel(conversation: Conversation): boolean {
+  return (
+    conversation.kind === 'channel' &&
+    !conversation.party &&
+    conversation.joined !== false &&
+    !conversation.kicked
+  )
+}
+
 /** A left or kicked channel must not be reopened by a saved startup choice. */
 export function startupChannels(data: Bootstrap): Conversation[] {
   const networks = new Set(data.networks.map((network) => network.id))
   return data.conversations
     .filter(
-      (conversation) =>
-        conversation.kind === 'channel' &&
-        !conversation.party &&
-        conversation.joined !== false &&
-        !conversation.kicked &&
-        networks.has(conversation.networkId),
+      (conversation) => canRestoreChannel(conversation) && networks.has(conversation.networkId),
     )
     .sort((a, b) => a.networkId.localeCompare(b.networkId) || a.id.localeCompare(b.id))
 }

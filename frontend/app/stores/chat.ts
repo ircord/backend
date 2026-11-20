@@ -41,6 +41,7 @@ import {
   otherPeople,
 } from '../../shared/utils/people'
 import { sameConversationSettings } from '../../shared/utils/conversation'
+import { canRestoreChannel } from '../../shared/utils/startup'
 import {
   discardDraft as discardDraftText,
   mergeDrafts,
@@ -144,6 +145,14 @@ export const useChatStore = defineStore('chat', () => {
     'session',
   )
   const lastConversation = savedConversation || sessionConversation
+  const networkChannelsKey = `${accountPrefix}.last-channel-by-network`
+  const viewedChannels = new Map<string, string>()
+  const readNetworkChannels = () =>
+    readLocal<Record<string, unknown>>(networkChannelsKey, (value) =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {},
+    )
   const activeId = ref('')
   const selectionRevision = ref(0)
   let startupPending = true
@@ -1430,14 +1439,24 @@ export const useChatStore = defineStore('chat', () => {
     if (remember) {
       writeLocal(`${accountPrefix}.active`, id, 'session')
       writeLocal(`${accountPrefix}.last-conversation`, id)
+      if (canRestoreChannel(c) && (switching || !viewedChannels.has(c.networkId))) {
+        viewedChannels.set(c.networkId, id)
+        const saved = readNetworkChannels()
+        if (saved[c.networkId] !== id)
+          writeLocal(networkChannelsKey, { ...saved, [c.networkId]: id })
+      }
     }
     if (readingActiveConversation(id)) void markRead(id, !switching)
   }
   function selectNetwork(id: string) {
     if (!data.value?.networks.some((n) => n.id === id)) return
+    const conversations = data.value.conversations.filter((c) => c.networkId === id)
+    const remembered = viewedChannels.get(id) ?? readNetworkChannels()[id]
+    const lastId = typeof remembered === 'string' ? remembered : lastConversation
     const c =
-      data.value?.conversations.find((x) => x.networkId === id && x.kind === 'channel') ??
-      data.value?.conversations.find((x) => x.networkId === id)
+      conversations.find((c) => c.id === lastId && canRestoreChannel(c)) ??
+      conversations.find(canRestoreChannel) ??
+      conversations.find((c) => c.kind === 'direct' || c.party)
     activate(c?.id ?? serverViewId(id))
   }
   function step(direction: 1 | -1) {

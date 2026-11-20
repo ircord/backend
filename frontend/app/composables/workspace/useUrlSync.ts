@@ -208,7 +208,8 @@ export function useUrlSync() {
       /^\/(channel|dm|server)(\/|$)/.test(route.path)
     initialized = true
     if (!explicit) {
-      await waitForPreferences()
+      const openingHome = route.path === '/'
+      if (openingHome) await waitForPreferences()
       if (disposed) return
       if (
         chat.selectionRevision !== initialSelection ||
@@ -220,14 +221,14 @@ export function useUrlSync() {
       if (chat.data) {
         const id = startupConversation(
           chat.data,
-          preferences.revision === initialPreferenceRevision
+          openingHome && preferences.revision === initialPreferenceRevision
             ? preferences.preferences.startup
             : { mode: 'last', channelId: null },
           chat.lastConversation,
         )
         if (id) {
           applying = true
-          chat.activate(id, isConversationPath(route.path))
+          chat.activate(id, openingHome)
           applying = false
         }
       }

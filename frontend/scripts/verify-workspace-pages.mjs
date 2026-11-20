@@ -101,6 +101,54 @@ try {
   await menu.waitFor()
   await page.keyboard.press('Escape')
   await menu.waitFor({ state: 'detached' })
+
+  // Each network restores its own channel, including after reloading on another network.
+  const rail = page.locator('.network-rail')
+  const libera = rail.getByRole('button', { name: /^Libera Chat/ })
+  const ergo = rail.getByRole('button', { name: /^Ergo/ })
+  await sidebar.locator('[data-sort-id="development"]').click()
+  await page.waitForURL(`${base}/channel/development`)
+  await ergo.click()
+  await page.waitForURL(`${base}/channel/ergo-lounge`)
+  await libera.click()
+  await page.waitForURL(`${base}/channel/development`)
+
+  const createdChannel = await context.request.post(`${base}/api/v1/networks/ergo/channels`, {
+    data: { name: '#navigation-check' },
+  })
+  assert(createdChannel.ok())
+  const { conversation } = await createdChannel.json()
+  await ergo.click()
+  await sidebar.locator(`[data-sort-id="${conversation.id}"]`).click()
+  await page.waitForURL(`${base}/channel/${conversation.id}`)
+  await page.reload()
+  await page.getByRole('textbox', { name: 'Message #navigation-check', exact: true }).waitFor()
+  await libera.click()
+  await page.waitForURL(`${base}/channel/development`)
+  await ergo.click()
+  await page.waitForURL(`${base}/channel/${conversation.id}`)
+  await libera.click()
+  await page.waitForURL(`${base}/channel/development`)
+
+  const leftChannel = await context.request.delete(
+    `${base}/api/v1/conversations/${conversation.id}`,
+  )
+  assert(leftChannel.ok())
+  await page.reload()
+  await ergo.click()
+  await page.waitForURL(`${base}/channel/ergo-lounge`)
+  await libera.click()
+  await page.waitForURL(`${base}/channel/development`)
+
+  // Reloading a utility page keeps its return destination. Opening IRCord at / uses startup.
+  await tool('Search', '/search')
+  await page.reload()
+  await page.getByRole('button', { name: 'Return to conversation', exact: true }).click()
+  await page.waitForURL(`${base}/channel/development`)
+  await page.goto(base)
+  await page.waitForURL(`${base}/channel/general`)
+  console.log('Per-server channel restore and the startup preference pass.')
+
   const composer = page.getByRole('textbox', { name: 'Message #general', exact: true })
   const draft = 'Keep this draft while browsing workspace pages'
   await composer.fill(draft)
