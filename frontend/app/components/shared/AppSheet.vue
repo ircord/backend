@@ -138,9 +138,10 @@ useEventListener(sheet, 'touchcancel', touchEnd, { passive: true })
             >
           </div>
         </header>
+        <!-- Cards keep their full height; a menu taller than the sheet scrolls. -->
         <div
           ref="scroller"
-          class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-3 pb-[calc(12px_+_env(safe-area-inset-bottom))] [&>.sheet-card]:overflow-hidden [&>.sheet-card]:rounded-xl [&>.sheet-card]:bg-foreground/5"
+          class="flex min-h-0 flex-col gap-3 overflow-y-auto overscroll-contain px-3 pb-[calc(12px_+_env(safe-area-inset-bottom))] [&>*]:shrink-0 [&>.sheet-card]:overflow-hidden [&>.sheet-card]:rounded-xl [&>.sheet-card]:bg-foreground/5"
         >
           <slot />
         </div>
