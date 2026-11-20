@@ -1,4 +1,5 @@
 <script setup vapor lang="ts">
+import { networkGlyph } from '../../../shared/utils/network-glyph'
 const emit = defineEmits<{ add: [] }>()
 const { t } = useI18n()
 const $t = t
@@ -18,6 +19,12 @@ const unread = (id: string) => {
     : list.some((c) => c.unreadCount && notifications.level(c) !== 'none')
       ? 'unread'
       : ''
+}
+const glyphs = new Map<string, ReturnType<typeof networkGlyph>>()
+function glyph(name: string) {
+  let value = glyphs.get(name)
+  if (!value) glyphs.set(name, (value = networkGlyph(name)))
+  return value
 }
 /** The tab's name with what its dot shows: connection first, then mentions or unread. */
 function label(network: { id: string; name: string; status: string }) {
@@ -90,28 +97,49 @@ function navigate(event: KeyboardEvent) {
       @click="selectNetwork(network.id)"
       @contextmenu="menus.network($event, network)"
     >
-      <NuxtImg
-        v-if="preferences.preferences.networkIcons[network.id]"
-        :src="preferences.preferences.networkIcons[network.id]"
-        alt=""
-        class="size-4 shrink-0 rounded-sm object-cover"
-      />
-      <span class="truncate">{{ network.name }}</span>
-      <!-- Shape as well as colour: a hollow ring while not connected, a ringed dot for mentions,
-           a plain dot for unread messages, and a soft green dot when online. -->
-      <i
-        class="shrink-0 rounded-full"
-        :class="
-          network.status !== 'connected'
-            ? 'network-offline size-2 border-[1.5px] border-solid border-warning'
-            : unread(network.id) === 'mention'
-              ? 'network-mention size-1.5 bg-destructive outline-1 outline-offset-[1.5px] outline-solid outline-destructive'
-              : unread(network.id)
-                ? 'network-unread size-1.5 bg-foreground'
-                : 'network-online size-1.5 bg-success'
-        "
+      <span
+        class="relative -ml-1.5 size-5 shrink-0"
         aria-hidden="true"
-      />
+      >
+        <NuxtImg
+          v-if="preferences.preferences.networkIcons[network.id]"
+          :src="preferences.preferences.networkIcons[network.id]"
+          alt=""
+          class="size-full rounded-md object-cover"
+        />
+        <!-- No icon of its own: a pattern and hue drawn from the name. -->
+        <svg
+          v-else
+          viewBox="-1 -1 7 7"
+          class="network-glyph size-full rounded-md"
+          :style="{ background: `hsl(${glyph(network.name).hue} 42% 72%)` }"
+        >
+          <rect
+            v-for="[column, row] in glyph(network.name).cells"
+            :key="`${column}:${row}`"
+            :x="column"
+            :y="row"
+            width="1"
+            height="1"
+            :fill="`hsl(${glyph(network.name).hue} 38% 30%)`"
+          />
+        </svg>
+        <!-- Shape as well as colour: a hollow ring while not connected, a larger dot for mentions,
+             a plain dot for unread messages, and a soft green dot when online. -->
+        <i
+          class="absolute right-[-3px] bottom-[-3px] rounded-full shadow-[0_0_0_2px_var(--sidebar)]"
+          :class="
+            network.status !== 'connected'
+              ? 'network-offline size-2 border-[1.5px] border-solid border-warning bg-sidebar'
+              : unread(network.id) === 'mention'
+                ? 'network-mention size-2.5 bg-destructive'
+                : unread(network.id)
+                  ? 'network-unread size-2 bg-foreground'
+                  : 'network-online size-2 bg-success'
+          "
+        />
+      </span>
+      <span class="truncate">{{ network.name }}</span>
     </button>
     <AppTooltip :text="$t('workspaceUi.networks.add')">
       <UiButton

@@ -243,7 +243,7 @@ export default defineNuxtConfig({
         'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content',
       meta: [
         { name: 'robots', content: 'noindex, nofollow' },
-        { name: 'theme-color', content: '#19191f' },
+        { name: 'theme-color', content: '#1b1b21' },
         // Installed (Home Screen) app on iOS, required there for Web Push.
         { name: 'mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },

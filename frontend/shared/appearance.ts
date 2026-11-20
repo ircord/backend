@@ -300,7 +300,8 @@ export function compileAppearance(appearance: Appearance, mode: SchemeMode, them
     // Doubled :root outranks the stylesheet defaults wherever this <style> lands in <head>.
     css: `:root:root { ${declarations.join('; ')}; }`,
     attrs,
-    background: tokens.main,
+    // The browser's theme color (phone status bar) continues the top bar.
+    themeColor: tokens.sidebar,
     tokens,
     scheme,
   }

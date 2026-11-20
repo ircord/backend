@@ -42,6 +42,13 @@
     --header-height: max(48px, calc(48px * var(--interface-scale, 1)));
   }
 }
+/* Phones: shorter top bar and conversation header leave more height for messages. */
+@media (max-width: 700px) {
+  :root,
+  :root[data-density='compact'] {
+    --header-height: max(40px, calc(40px * var(--interface-scale, 1)));
+  }
+}
 
 * {
   box-sizing: border-box;

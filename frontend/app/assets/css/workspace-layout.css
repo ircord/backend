@@ -244,6 +244,12 @@
   .chat-main {
     border-width: 0;
   }
+  /* Bar controls fit the shorter phone header and stay over 24px to tap. */
+  .workspace-bar :is(.icon-button, .network-tab),
+  .chat-header .icon-button {
+    min-width: 34px;
+    min-height: 34px;
+  }
 }
 /* Keep content off a physical hinge while preserving the top-level navigation. */
 @media (horizontal-viewport-segments: 2) {

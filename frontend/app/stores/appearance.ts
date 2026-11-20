@@ -142,7 +142,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
   })
 
   watchEffect(() => {
-    const { css, attrs, background } = compiled.value
+    const { css, attrs, themeColor } = compiled.value
     const root = document.documentElement
     for (const [name, value] of Object.entries(attrs)) root.setAttribute(name, value)
     for (const name of optionalAttributes) if (!(name in attrs)) root.removeAttribute(name)
@@ -155,7 +155,7 @@ export const useAppearanceStore = defineStore('appearance', () => {
       document.head.appendChild(style)
     }
     style.textContent = css
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', background)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor)
   })
   // A personal theme's custom CSS: only ever the filtered output, after every app stylesheet.
   watchEffect(() => {

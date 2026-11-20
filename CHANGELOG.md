@@ -5,6 +5,10 @@ What changed for people using IRCord, newest release first. Each release lists w
 
 ## Unreleased
 
+### Improved
+
+- On phones, the status bar takes the top bar's color, and the top bar and conversation header are shorter, so more messages fit. Network tabs show their connection dot on the network icon, and networks without an icon get a pattern made from their name.
+
 ## v0.7.0 — 2026-11-18
 
 ### New
