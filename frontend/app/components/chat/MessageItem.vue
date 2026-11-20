@@ -166,6 +166,13 @@ const contextMenu = useContextMenu()
 const moreMenuOpen = computed(
   () => contextMenu.state.open && contextMenu.state.returnFocus === moreButton.value,
 )
+/** This message's menu is open (long-press, right-click or a button in it): the row is marked. */
+const menuOpen = computed(
+  () =>
+    contextMenu.state.open &&
+    !!contextMenu.state.returnFocus &&
+    !!row.value?.contains(contextMenu.state.returnFocus),
+)
 /** Names the Shift actions this message actually offers. */
 const moreTitle = computed(() => {
   const hidden = [
@@ -278,6 +285,7 @@ function react(item: EmojiItem) {
       'is-deleted': message.deleted,
       'is-editing': editing,
       'show-actions': reacting,
+      'is-menu-open': menuOpen,
     }"
     :aria-label="rowLabel"
     :data-swipe-reply="swipeReply || undefined"

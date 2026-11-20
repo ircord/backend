@@ -48,9 +48,18 @@ export function useTouchGestures(options: {
    */
   let slide: { el: HTMLElement; origin: number; at: number; ready: boolean } | null = null
 
+  /** The message under a held finger is marked (`data-pressing`), so a long-press shows its target. */
+  let pressTimer: ReturnType<typeof setTimeout> | undefined
+  let pressed: Element | null = null
+  function unpress() {
+    clearTimeout(pressTimer)
+    pressed?.removeAttribute('data-pressing')
+    pressed = null
+  }
   function cancel() {
     clearTimeout(timer)
     timer = undefined
+    unpress()
   }
   function pointerCancel() {
     cancel()
@@ -111,6 +120,13 @@ export function useTouchGestures(options: {
     cancel()
     // Text inputs keep their own long-press (selection, paste).
     if (isEditable(event.target)) return
+    // A short delay, so a finger that is only scrolling doesn't flash every message it touches.
+    const row = start.target.closest('.message-row')
+    if (row)
+      pressTimer = setTimeout(() => {
+        pressed = row
+        row.setAttribute('data-pressing', '')
+      }, 120)
     timer = setTimeout(() => {
       if (!start || nativeMenu) return
       longPressed = true

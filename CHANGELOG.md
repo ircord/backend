@@ -5,6 +5,14 @@ What changed for people using IRCord, newest release first. Each release lists w
 
 ## Unreleased
 
+### Improved
+
+- Pressing and holding a message highlights it, and it stays highlighted while its menu is open.
+
+### Fixed
+
+- On phones, long menus scroll instead of squeezing their items until some are cut off.
+
 ## v0.7.1 — 2026-11-21
 
 ### Improved
