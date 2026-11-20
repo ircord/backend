@@ -90,6 +90,17 @@ try {
   }
   await page.goto(base)
   await page.waitForURL(`${base}/channel/general`)
+  // A menu button toggles its menu: the second click closes it, the third opens it again.
+  const options = page.locator('.conversation-options')
+  const menu = page.locator('.context-menu')
+  await options.click()
+  await menu.waitFor()
+  await options.click()
+  await menu.waitFor({ state: 'detached' })
+  await options.click()
+  await menu.waitFor()
+  await page.keyboard.press('Escape')
+  await menu.waitFor({ state: 'detached' })
   const composer = page.getByRole('textbox', { name: 'Message #general', exact: true })
   const draft = 'Keep this draft while browsing workspace pages'
   await composer.fill(draft)

@@ -4,7 +4,7 @@ import { DropdownMenuCheckboxItem } from 'reka-ui'
 import { dropdownMenuItemVariants } from '../ui/dropdown-menu'
 import type { MenuItem } from '../../composables/shared/useContextMenu'
 const { t: $t } = useI18n()
-const { state, close } = useContextMenu()
+const { state, close, pressedOutside } = useContextMenu()
 const chat = useChatStore()
 // Menus describe current privileges. Close an open menu when the selected
 // network or channel permissions change instead of leaving stale actions live.
@@ -88,7 +88,12 @@ onBeforeUnmount(() => {
       :aria-label="state.title ? undefined : $t('workspaceUi.shell.actions')"
       @open-auto-focus="focusFirst"
       @close-auto-focus.prevent
-      @pointer-down-outside="outside = true"
+      @pointer-down-outside="
+        (event) => {
+          outside = true
+          pressedOutside(event.detail.originalEvent.target)
+        }
+      "
       @focus-outside="outside = true"
       @contextmenu.prevent
     >

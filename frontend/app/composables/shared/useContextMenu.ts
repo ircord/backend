@@ -41,6 +41,14 @@ const state = reactive<MenuState>({
   quick: [],
   returnFocus: null,
 })
+/**
+ * The button whose press just closed its own menu. The press closes the menu on pointerdown, so
+ * the click that follows must not open it again. Cleared by the next press anywhere.
+ */
+let dismissedBy: HTMLElement | null = null
+function clearDismissed() {
+  dismissedBy = null
+}
 
 /**
  * One app-wide context menu. Open it from a `contextmenu` event, or from a button for dropdowns
@@ -57,6 +65,18 @@ export function useContextMenu() {
       (item, i, all) => item !== '-' || (i > 0 && all[i - 1] !== '-' && i < all.length - 1),
     )
     if (!entries.length) return
+    // A second click on the button that opened the menu closes it (the press already did).
+    const trigger = event instanceof MouseEvent ? event.currentTarget : event
+    if (
+      dismissedBy &&
+      trigger === dismissedBy &&
+      !(event instanceof MouseEvent && event.type === 'contextmenu')
+    ) {
+      if (event instanceof MouseEvent) event.preventDefault()
+      dismissedBy = null
+      return
+    }
+    dismissedBy = null
     if (event instanceof MouseEvent) {
       event.preventDefault()
       // Keyboard-opened (Shift+F10 / menu key) events carry no pointer position.
@@ -86,5 +106,15 @@ export function useContextMenu() {
     state.title = ''
     if (restoreFocus && target?.isConnected) target.focus()
   }
-  return { state, open, close }
+  /** A press outside the menu: remembers when it landed on the menu's own button. */
+  function pressedOutside(target: EventTarget | null) {
+    const trigger = state.returnFocus
+    if (!trigger || !(target instanceof Node) || !trigger.contains(target)) return
+    dismissedBy = trigger
+    // After this press is dispatched, so only a later press clears it.
+    setTimeout(() =>
+      window.addEventListener('pointerdown', clearDismissed, { capture: true, once: true }),
+    )
+  }
+  return { state, open, close, pressedOutside }
 }
