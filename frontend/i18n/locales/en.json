@@ -428,7 +428,8 @@
       "remove": "Remove",
       "removeManager": "Remove {username} as an emoji manager",
       "none": "No managers yet. Server owners can still manage every emoji.",
-      "already": "{username} already manages emoji."
+      "already": "{username} already manages emoji.",
+      "ownerNote": "Server owner: can always manage emoji"
     },
     "server": "Server",
     "alreadyOwner": "Already an owner",

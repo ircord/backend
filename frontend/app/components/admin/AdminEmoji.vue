@@ -88,6 +88,7 @@ function remove(user: User) {
         <AdminAccountPicker
           :label="t('collectionsUi.admin.usernameOrNickname')"
           :action="t('administration.emojiManagement.add')"
+          :owner-note="t('administration.emojiManagement.ownerNote')"
           :busy="busy"
           @choose="add"
         />

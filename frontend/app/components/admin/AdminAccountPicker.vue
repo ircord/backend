@@ -4,7 +4,8 @@ import { createPeopleCache, createPeopleSearch } from '../../../shared/utils/peo
 
 type Match = components['schemas']['IdentityMatch']
 type User = NonNullable<Match['user']>
-const props = defineProps<{ label: string; action: string; busy?: boolean }>()
+/** `ownerNote` is the hint beside an owner in the results; owner grants say they're one already. */
+const props = defineProps<{ label: string; action: string; busy?: boolean; ownerNote?: string }>()
 const emit = defineEmits<{ choose: [user: User] }>()
 const { t } = useI18n()
 const errorMessage = (value: unknown) => errorText(value, (key) => t(key))
@@ -111,7 +112,7 @@ function highlight(key?: string) {
             ><small
               v-else-if="matches.find((item) => keyOf(item) === option.key)?.user?.owner"
               class="text-muted-foreground"
-              >{{ t('administration.alreadyOwner') }}</small
+              >{{ ownerNote ?? t('administration.alreadyOwner') }}</small
             ></span
           >
         </template>
