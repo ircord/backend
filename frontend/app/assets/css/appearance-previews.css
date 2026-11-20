@@ -167,11 +167,25 @@
   border-top-right-radius: 3px;
 }
 
+/* Phones: the three layouts stay side by side as small tiles. The note is still read out. */
 @media (max-width: 700px) {
   .layout-choices {
-    grid-template-columns: 1fr;
+    gap: 8px;
   }
+  .layout-choices .layout-glyph {
+    height: 44px;
+    padding: 8px;
+  }
+  /* Sticks flush under the section bar: a phone section's top padding is 12px. */
   .appearance-preview {
-    top: -16px;
+    top: -12px;
+  }
+  .layout-choices small {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }

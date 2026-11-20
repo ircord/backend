@@ -20,12 +20,16 @@ provide(
   <div
     :class="
       cn(
-        'setting-row flex items-center justify-between gap-4',
+        // Phones: a wide control (slider, choices) wraps under the text instead of squeezing
+        // it; a switch still fits beside it.
+        'setting-row flex items-center justify-between gap-4 max-[700px]:flex-wrap max-[700px]:gap-y-2.5',
         stacked && 'stacked flex-col items-stretch gap-2.5',
       )
     "
   >
-    <span class="setting-copy flex flex-col gap-[1px] flex-1 min-w-0"
+    <span
+      class="setting-copy flex flex-col gap-[1px] flex-1 min-w-0"
+      :class="{ 'max-[700px]:basis-48': !stacked }"
       ><strong>{{ label }}</strong
       ><small
         v-if="description || $slots.description"

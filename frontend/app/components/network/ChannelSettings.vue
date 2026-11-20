@@ -15,8 +15,11 @@ const name = computed(() => `#${c.value?.name ?? ''}`)
 const rights = computed(() => channelRights('you', c.value, network.value))
 const groups = computed(() => parseChanmodes(network.value?.isupport))
 const myPrefix = computed(() => topPrefix('you', c.value, network.value))
-const tab = ref(props.initialTab ?? 'overview')
+// Without a tab, phones open on the section list and wider screens on Overview.
+const tab = ref(props.initialTab || 'overview')
 useViewHistory('channel-settings-section', tab)
+const pages = useSettingsPages('channel-settings', !props.initialTab)
+const currentLabel = computed(() => tabs.value.find((item) => item.id === tab.value)?.label ?? '')
 const listLabels = computed(() => listInfo(translate))
 // The channel guide tab exists only for channels on this server's own network (#258).
 const guideListing = ref<components['schemas']['ChannelGuideListing']>()
@@ -55,13 +58,24 @@ const rankPhrase = (prefix: string) =>
 </script>
 <template>
   <AppDialog
-    :title="t('collectionsUi.channel.settings.title', { channel: name })"
+    :title="
+      pages.inSection ? currentLabel : t('collectionsUi.channel.settings.title', { channel: name })
+    "
+    :back="
+      pages.inSection
+        ? t('settings.backTo', {
+            name: t('collectionsUi.channel.settings.title', { channel: name }),
+          })
+        : undefined
+    "
     panel
+    @back="pages.back()"
     @close="emit('close')"
   >
     <SettingsLayout
       v-if="c"
       :label="t('collectionsUi.channel.settings.label')"
+      :pages="pages"
       class="channel-settings"
     >
       <template #nav>

@@ -17,6 +17,7 @@ const sections = [
 type Section = (typeof sections)[number]['id']
 const tab = ref<Section>('status')
 useViewHistory('administration-section', tab)
+const pages = useSettingsPages('administration')
 const current = computed(() => sections.find((s) => s.id === tab.value)!)
 const access = useQuery(administrationAccessQuery)
 const queryCache = useQueryCache()
@@ -35,17 +36,22 @@ const { t: $t } = useI18n()
 </script>
 <template>
   <AppDialog
-    :title="$t('administration.title')"
+    :title="pages.inSection ? $t(current.name) : $t('administration.title')"
+    :back="
+      pages.inSection ? $t('settings.backTo', { name: $t('administration.title') }) : undefined
+    "
     panel
+    @back="pages.back()"
     @close="emit('close')"
     ><SettingsLayout
       :label="$t('administration.title')"
+      :pages="pages"
       class="admin-layout"
     >
       <template #nav>
         <div class="settings-nav-section contents">
           <div
-            class="settings-nav-group pt-0.5 pr-2.5 pb-1 pl-2.5 text-[11px] font-[650] tracking-[0.05em] uppercase text-faint max-[700px]:sr-only"
+            class="settings-nav-group pt-0.5 pr-2.5 pb-1 pl-2.5 text-[11px] font-[650] tracking-[0.05em] uppercase text-faint"
           >
             {{ $t('administration.server') }}
           </div>

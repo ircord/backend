@@ -122,7 +122,7 @@ onBeforeUnmount(() => clearTimeout(pressTimer))
     </p>
 
     <dl
-      class="about-facts grid [grid-template-columns:repeat(auto-fit,_minmax(150px,_1fr))] gap-2 w-full [&>div]:min-w-0 [&>div]:rounded-sm [&>div]:bg-card [&>div]:px-3 [&>div]:py-2.5 [&_code]:font-code [&_code]:text-[12px] [&_dd]:mt-[3px] [&_dd]:text-[13px] [&_dd]:text-foreground [&_dd]:wrap-anywhere [&_dt]:text-[11px] [&_dt]:font-[650] [&_dt]:uppercase [&_dt]:tracking-[0.04em] [&_dt]:text-faint"
+      class="about-facts grid [grid-template-columns:repeat(auto-fit,_minmax(150px,_1fr))] gap-2 w-full [&>div]:min-w-0 [&>div]:rounded-sm [&>div]:bg-card [&>div]:px-3 [&>div]:py-2.5 [&_code]:font-code [&_code]:text-[12px] [&_dd]:ms-0 [&_dd]:mt-[3px] [&_dd]:text-[13px] [&_dd]:text-foreground [&_dd]:wrap-anywhere [&_dt]:text-[11px] [&_dt]:font-[650] [&_dt]:uppercase [&_dt]:tracking-[0.04em] [&_dt]:text-faint"
     >
       <div>
         <dt>{{ $t('about.build') }}</dt>

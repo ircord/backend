@@ -71,7 +71,7 @@ type Overlay =
   | 'welcome'
 const overlay = ref<Overlay | null>(null)
 const joinFilter = ref('')
-const settingsTab = ref('appearance')
+const settingsTab = ref('')
 /** Network being edited ('' adds one), and a prefill for new ones (irc:// links). */
 const networkDialog = ref<{
   id: string
@@ -84,7 +84,7 @@ const onboardingNetwork = computed(() => {
   return chat.data?.networks.find((n) => n.id === id)
 })
 /** Channel whose settings panel is open, and the tab it opened on. */
-const channelPanel = ref({ id: '', tab: 'overview' })
+const channelPanel = ref({ id: '', tab: '' })
 const createChannelNetwork = ref('')
 const partyPanel = ref<{ mode: 'create' | 'details'; conversationId?: string }>({ mode: 'create' })
 const profileId = ref('you')
@@ -173,7 +173,8 @@ actions.profile = (id) => {
   profileId.value = id
   overlay.value = 'profile'
 }
-actions.settings = (tab = 'appearance') => {
+// No tab: phones open Settings on its section list.
+actions.settings = (tab = '') => {
   settingsTab.value = tab
   overlay.value = 'settings'
 }
@@ -185,7 +186,7 @@ actions.addNetwork = (prefill) => {
   networkDialog.value = { id: '', prefill }
   overlay.value = 'network'
 }
-actions.channelSettings = (id, tab = 'overview') => {
+actions.channelSettings = (id, tab = '') => {
   if (chat.data?.conversations.find((c) => c.id === id)?.party) return
   channelPanel.value = { id, tab }
   overlay.value = 'channel'

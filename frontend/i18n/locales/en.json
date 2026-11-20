@@ -573,7 +573,7 @@
     "sync": {
       "aria": "Sync appearance across devices",
       "help": "Use the same appearance, message layout and animated emoji on every device.",
-      "localOnly": "Appearance is saved on this device only. Turn on Sync at the top of Settings to use it everywhere."
+      "localOnly": "Appearance is saved on this device only. Turn on Sync to use it on every device."
     },
     "themeAccent": "Theme accent",
     "typeface": "Typeface",
@@ -1342,6 +1342,7 @@
     "saved": "Saved",
     "saveFailed": "Couldn’t save your latest change",
     "syncAppearance": "Sync",
+    "backTo": "Back to {name}",
     "clearSearch": "Clear search",
     "found": "{count} setting found | {count} settings found",
     "matchingSettings": "Matching settings",

@@ -12,14 +12,17 @@ const props = withDefaults(
      * Escape or outside), false when navigation or Back closes it.
      */
     beforeClose?: (byUser: boolean) => boolean
+    /** The label of a Back button before the title (a settings section on a phone). */
+    back?: string
   }>(),
   {
     wide: false,
     panel: false,
     bare: false,
+    back: undefined,
   },
 )
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; back: [] }>()
 const open = ref(true)
 function close(byUser = false) {
   if (!open.value) return true
@@ -89,14 +92,31 @@ onUnmounted(() => {
             ? 'absolute top-2.5 right-2.5 z-10'
             : [
                 'pt-4 pr-3 pb-3 pl-5',
-                { 'border-b border-b-border [border-bottom-style:solid]': panel },
+                {
+                  'border-b border-b-border [border-bottom-style:solid]': panel,
+                  // Phones: one slim bar, so the page below gets the height.
+                  'max-[700px]:gap-1 max-[700px]:py-1 max-[700px]:pr-1.5': panel,
+                  'max-[700px]:pl-4': panel && !back,
+                  'max-[700px]:pl-1': panel && back,
+                },
               ]
         "
       >
+        <UiButton
+          v-if="back"
+          variant="ghost"
+          size="icon-sm"
+          class="shrink-0"
+          :aria-label="back"
+          @click="emit('back')"
+          ><AppIcon
+            name="back"
+            :size="20"
+        /></UiButton>
         <UiDialogTitle
           as="h2"
-          class="text-[length:calc(17px_*_var(--interface-scale,1))] font-[650] tracking-[-0.01em]"
-          :class="{ 'sr-only': bare }"
+          class="min-w-0 truncate text-[length:calc(17px_*_var(--interface-scale,1))] font-[650] tracking-[-0.01em]"
+          :class="{ 'sr-only': bare, 'mr-auto': !$slots.actions }"
           >{{ title }}</UiDialogTitle
         >
         <!-- Dialog-wide controls and status, beside Close. -->

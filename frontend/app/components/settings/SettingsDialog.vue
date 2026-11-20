@@ -10,8 +10,11 @@ import {
   type SettingsSectionId,
 } from '../../../shared/settings-index'
 
-/** `initialTab` is a section id or a setting id from shared/settings-index.ts. */
-const props = withDefaults(defineProps<{ initialTab?: string }>(), { initialTab: 'appearance' })
+/**
+ * `initialTab` is a section id or a setting id from shared/settings-index.ts. Without one,
+ * phones open on the section list and wider screens on Appearance.
+ */
+const props = withDefaults(defineProps<{ initialTab?: string }>(), { initialTab: '' })
 const emit = defineEmits<{ close: []; addNetwork: []; editNetwork: [id: string] }>()
 const auth = useAuthStore()
 const media = useMediaStore()
@@ -96,8 +99,12 @@ async function reveal(id: string) {
 }
 
 // A setting given as the destination is revealed once its panel has rendered.
-open(props.initialTab)
+open(props.initialTab || 'appearance')
 useViewHistory('settings-section', tab)
+const pages = useSettingsPages(
+  'settings',
+  !props.initialTab || props.initialTab === 'appearance-sync',
+)
 
 // Links inside a section open through the same path; a section link moves focus to its title.
 provide(settingsNavigationKey, (target) => {
@@ -138,6 +145,8 @@ const context = (result: SettingResult) =>
 function choose(result: SettingResult | undefined) {
   if (!result) return
   query.value = ''
+  // On phones Sync is on the list itself; every other result is inside a section.
+  if (result.entry.id !== 'appearance-sync') pages.show()
   open(result.entry.id)
 }
 function clear() {
@@ -166,8 +175,10 @@ function keydown(event: KeyboardEvent) {
 </script>
 <template>
   <AppDialog
-    :title="$t('settings.title')"
+    :title="pages.inSection ? $t(current.name) : $t('settings.title')"
+    :back="pages.inSection ? $t('settings.backTo', { name: $t('settings.title') }) : undefined"
     panel
+    @back="pages.back()"
     @close="emit('close')"
     ><template #actions>
       <span
@@ -181,7 +192,9 @@ function keydown(event: KeyboardEvent) {
           class="shrink-0"
         /><span class="truncate">{{ saveStatus.text }}</span></span
       >
+      <!-- Phones keep the bar slim: Sync is the first row of Appearance there. -->
       <label
+        v-if="!pages.phone"
         data-setting="appearance-sync"
         class="settings-sync inline-flex shrink-0 items-center gap-2 rounded-full bg-secondary/45 py-1 pr-1.5 pl-3 text-[length:var(--ui-caption)] font-[550] text-muted-foreground shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--border)_55%,transparent)]"
         :title="$t('appearance.sync.help')"
@@ -196,7 +209,11 @@ function keydown(event: KeyboardEvent) {
           @update:model-value="appearance.setSync($event)"
         />
       </label> </template
-    ><SettingsLayout :label="$t('settings.title')">
+    ><SettingsLayout
+      :label="$t('settings.title')"
+      :pages="pages"
+      :searching="searching"
+    >
       <template #search>
         <div
           class="settings-search [grid-area:search] relative flex items-center pt-3 pr-2 pb-1 pl-2 bg-sidebar text-muted-foreground max-[700px]:pt-2 max-[700px]:pb-0"
@@ -244,6 +261,32 @@ function keydown(event: KeyboardEvent) {
         </div>
       </template>
       <template #nav>
+        <!-- Phones keep the bar slim: Sync heads the section list, where its state shows. -->
+        <label
+          v-if="pages.phone"
+          data-setting="appearance-sync"
+          class="settings-sync-row mb-2 flex min-h-14 items-center gap-3 rounded-md bg-secondary/45 px-3 py-2.5 shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--border)_55%,transparent)]"
+        >
+          <AppIcon
+            :name="appearance.sync ? 'cloud' : 'cloudOff'"
+            :size="17"
+            class="shrink-0"
+            :class="appearance.sync ? 'text-primary' : 'text-muted-foreground'"
+          />
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <strong class="text-[15px] font-medium text-foreground">{{
+              $t('settings.syncAppearance')
+            }}</strong>
+            <small class="text-[length:var(--ui-caption)] leading-snug text-muted-foreground">{{
+              $t('appearance.sync.help')
+            }}</small>
+          </span>
+          <AppSwitch
+            :model-value="appearance.sync"
+            :aria-label="$t('appearance.sync.aria')"
+            @update:model-value="appearance.setSync($event)"
+          />
+        </label>
         <div
           v-for="group in groups"
           :key="group.id"
@@ -253,7 +296,7 @@ function keydown(event: KeyboardEvent) {
         >
           <div
             :id="group.headingId"
-            class="settings-nav-group pt-3.5 pr-2.5 pb-1 pl-2.5 text-[11px] font-[650] tracking-[0.05em] uppercase text-faint [.settings-nav-section:first-child>&]:pt-0.5 max-[700px]:sr-only"
+            class="settings-nav-group pt-3.5 pr-2.5 pb-1 pl-2.5 text-[11px] font-[650] tracking-[0.05em] uppercase text-faint [.settings-nav-section:first-child>&]:pt-0.5"
           >
             {{ $t(group.name) }}
           </div>
