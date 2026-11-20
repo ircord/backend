@@ -171,37 +171,50 @@ func TestLoadReleasesUnsourcedSelfPlaceholder(t *testing.T) {
 	}
 }
 
-func TestMetadataSyncLaterRetriesARequestedTargetAFewTimes(t *testing.T) {
-	previous := metadataRetryUnit
-	metadataRetryUnit = time.Millisecond
-	defer func() { metadataRetryUnit = previous }()
-	c := &connection{ctx: context.Background(), ready: true, queue: make(chan []*girc.Event, 8), metadataSubscribed: true}
-	next := func() *girc.Event {
-		select {
-		case events := <-c.queue:
-			return events[0]
-		case <-time.After(time.Second):
-			return nil
+func takeMetadataSync(t *testing.T, c *connection) *girc.Event {
+	t.Helper()
+	select {
+	case events := <-c.queue:
+		if len(events) != 1 || events[0].Command != "METADATA" || len(events[0].Params) != 2 || events[0].Params[1] != "SYNC" {
+			t.Fatalf("expected one metadata sync, got %v", events)
 		}
+		c.mu.Lock()
+		c.startMetadataSyncWriteLocked(events[0], time.Now())
+		c.mu.Unlock()
+		return events[0]
+	case <-time.After(time.Second):
+		t.Fatal("metadata sync not queued")
+		return nil
 	}
+}
+
+func TestMetadataSyncLaterRetriesARequestedTargetAFewTimes(t *testing.T) {
+	c := &connection{ctx: context.Background(), ready: true, queue: make(chan []*girc.Event, 8), metadataSubscribed: true}
 	c.requestMetadataSync("#room")
-	if e := next(); e == nil || e.Command != "METADATA" || e.Params[0] != "#room" || e.Params[1] != "SYNC" {
+	if e := takeMetadataSync(t, c); e.Params[0] != "#room" {
 		t.Fatal("sync not requested", e)
 	}
 	for range metadataRetries {
+		before := time.Now()
 		c.retryMetadataSync(*girc.ParseEvent(":irc.test 774 me #room 2 :Try again later"))
-		if e := next(); e == nil || e.Params[0] != "#room" {
+		c.requestMetadataSync("#ROOM")
+		if len(c.metadataSyncQueue) != 1 || len(c.queue) != 0 || c.metadataSyncQueue[0].due.Before(before.Add(2*time.Second)) {
+			t.Fatal("duplicate sync bypassed the server delay")
+		}
+		c.dispatchMetadataSyncLocked(c.metadataSyncQueue[0].due)
+		if e := takeMetadataSync(t, c); e.Params[0] != "#room" {
 			t.Fatal("postponed sync was not retried", e)
 		}
 	}
 	c.retryMetadataSync(*girc.ParseEvent(":irc.test 774 me #room 2 :Try again later"))
-	if e := next(); e != nil {
-		t.Fatal("postponed sync retried without limit", e)
+	c.dispatchMetadataSyncLocked(time.Now().Add(time.Minute))
+	if len(c.queue) != 0 || len(c.metadataRequested) != 0 {
+		t.Fatal("postponed sync retried without limit")
 	}
 	// A target IRCord never asked about, such as Ergo's "*ALL" after SUB, is not requested.
 	c.retryMetadataSync(*girc.ParseEvent(":irc.test 774 * *ALL 0 :Try again later"))
-	if e := next(); e != nil {
-		t.Fatal("unrequested target was synced", e)
+	if len(c.queue) != 0 {
+		t.Fatal("unrequested target was synced")
 	}
 }
 
@@ -214,7 +227,20 @@ func TestMetadataSyncWaitsForSubscription(t *testing.T) {
 	}
 }
 
-func TestPeerJoinsCoalesceIntoOneQueueSlot(t *testing.T) {
+func TestMetadataSyncMissingReplyDoesNotBlockNextTarget(t *testing.T) {
+	c := &connection{ctx: context.Background(), ready: true, queue: make(chan []*girc.Event, 8), metadataSubscribed: true}
+	c.requestMetadataSync("#first", "#second")
+	first := takeMetadataSync(t, c)
+	if first.Params[0] != "#first" || len(c.queue) != 0 {
+		t.Fatal("expected the first target to be the only active lookup")
+	}
+	c.dispatchMetadataSyncLocked(c.metadataSyncActive.deadline)
+	if next := takeMetadataSync(t, c); next.Params[0] != "#second" || c.metadataRequested["#first"] != nil {
+		t.Fatal("the unanswered lookup blocked the next target")
+	}
+}
+
+func TestPeerJoinSyncsDeduplicateAndShareOneQueueSlot(t *testing.T) {
 	c := &connection{ctx: context.Background(), ready: true, queue: make(chan []*girc.Event, 8), metadataSubscribed: true}
 	c.queueJoinSync("#small", "alice")
 	c.queueJoinSync("#other", "alice")
@@ -222,17 +248,25 @@ func TestPeerJoinsCoalesceIntoOneQueueSlot(t *testing.T) {
 	for i := range metadataJoinBurst + 1 {
 		c.queueJoinSync("#busy", "user"+strconv.Itoa(i))
 	}
-	var events []*girc.Event
-	select {
-	case events = <-c.queue:
-	case <-time.After(2 * time.Second):
-		t.Fatal("joins were not synced")
-	}
 	targets := map[string]bool{}
-	for _, e := range events {
-		targets[e.Params[0]] = true
+	for i := range 3 {
+		target := takeMetadataSync(t, c).Params[0]
+		targets[target] = true
+		ref := strconv.Itoa(i)
+		c.batch(girc.Event{Params: []string{"+" + ref, "metadata", target}})
+		c.requestMetadataSync(strings.ToUpper(target))
+		if len(c.queue) != 0 {
+			t.Fatal("sent another lookup before the batch ended")
+		}
+		if err := c.enqueue(&girc.Event{Command: "PRIVMSG", Params: []string{"#small", "hello"}}); err != nil {
+			t.Fatal(err)
+		}
+		c.batch(girc.Event{Params: []string{"-" + ref}})
+		if events := <-c.queue; len(events) != 1 || events[0].Command != "PRIVMSG" {
+			t.Fatalf("chat did not keep its queue position: %v", events)
+		}
 	}
-	if len(c.queue) != 0 || len(events) != 3 || !targets["alice"] || !targets["bob"] || !targets["#busy"] {
-		t.Fatal("joins not coalesced into one slot of per-user and per-channel syncs", targets, len(events))
+	if len(c.queue) != 0 || len(c.metadataRequested) != 0 || !targets["alice"] || !targets["bob"] || !targets["#busy"] {
+		t.Fatal("joins did not coalesce into unique user and channel syncs", targets)
 	}
 }

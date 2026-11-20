@@ -33,6 +33,86 @@ func markerWorkspace(t *testing.T, capable bool) (*Manager, *connection, *storag
 	return m, c, store, v
 }
 
+func flushTestReadMarkers(c *connection) {
+	c.owner.mu.Lock()
+	c.flushReadMarkers()
+	c.owner.mu.Unlock()
+	for range len(c.queue) {
+		batch := <-c.queue
+		key := c.readMarkerEvents[batch[0]]
+		if key == "" {
+			c.queue <- batch
+			continue
+		}
+		send := c.prepareReadMarker(batch[0], key)
+		c.finishReadMarkerLocked(batch[0], key)
+		if send {
+			c.queue <- batch
+		}
+	}
+}
+
+func TestReadMarkerFlushUsesNewestReadAndSkipsDuplicates(t *testing.T) {
+	m, c, store, conv := markerWorkspace(t, true)
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	for i, id := range []string{"first", "latest", "next"} {
+		msg := Message{ID: id, UpstreamID: "irc-" + id, ConversationID: conv.ID, SenderID: "peer", Kind: "message", CreatedAt: at.Add(time.Duration(i) * time.Second)}
+		if err := store.SaveHistory("owner", msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, id := range []string{"first", "latest"} {
+		v, err := m.ReadThrough("owner", conv.ID, id, nil)
+		if err != nil || v.UnreadCount != 2-i || len(c.queue) != i {
+			t.Fatalf("read state did not apply before the IRC write: unread=%d err=%v", v.UnreadCount, err)
+		}
+		c.owner.mu.Lock()
+		c.flushReadMarkers()
+		c.owner.mu.Unlock()
+	}
+	flushTestReadMarkers(c)
+	if len(c.queue) != 1 || (<-c.queue)[0].Last() != "timestamp="+at.Add(time.Second).Format(ircTimeLayout) {
+		t.Fatal("the flush did not send just the newest read marker")
+	}
+	c.sendReadMarker("#MARKERS", at.Add(time.Second+100*time.Microsecond))
+	c.sendReadMarker("#markers", at)
+	flushTestReadMarkers(c)
+	if len(c.queue) != 0 {
+		t.Fatal("the same or an older wire timestamp was sent again")
+	}
+	if _, err := m.ReadThrough("owner", conv.ID, "next", nil); err != nil {
+		t.Fatal(err)
+	}
+	c.receiveReadMarker(girc.Event{Command: "MARKREAD", Params: []string{"#markers", "timestamp=" + at.Add(2*time.Second).Format(ircTimeLayout)}})
+	flushTestReadMarkers(c)
+	if len(c.queue) != 0 {
+		t.Fatal("the server already had the pending read marker")
+	}
+}
+
+func TestPendingReadMarkerRechecksLateEqualTimeMessage(t *testing.T) {
+	m, c, store, conv := markerWorkspace(t, true)
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	msg := Message{ID: "observed", UpstreamID: "observed-irc", ConversationID: conv.ID, SenderID: "peer", Kind: "message", CreatedAt: at}
+	if err := store.SaveHistory("owner", msg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ReadThrough("owner", conv.ID, msg.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	c.owner.mu.Lock()
+	c.flushReadMarkers()
+	c.owner.mu.Unlock()
+	msg.ID, msg.UpstreamID = "late", "late-irc"
+	if err := store.SaveHistory("owner", msg); err != nil {
+		t.Fatal(err)
+	}
+	flushTestReadMarkers(c)
+	if len(c.queue) != 0 {
+		t.Fatal("an older queued read crossed a new unread message with the same wire timestamp")
+	}
+}
+
 func TestIncomingReadMarkersAreMonotonicAndReconcileOnlyOnce(t *testing.T) {
 	m, c, store, conv := markerWorkspace(t, true)
 	at := time.Now().UTC().Truncate(time.Millisecond)
@@ -71,12 +151,15 @@ func TestIncomingReadMarkersAreMonotonicAndReconcileOnlyOnce(t *testing.T) {
 	if _, err := m.UpdateConversation("owner", conv.ID, &read, nil); err != nil {
 		t.Fatal(err)
 	}
+	flushTestReadMarkers(c)
 	<-c.queue // Normal local mark-read command.
 	check(0, 0)
 	// A fresh connection receives an older server marker. Reconcile the saved
 	// local position once, even if the server clamps and echoes it repeatedly.
 	c.readMarkersSeen = nil
+	c.readMarkerWrites = nil
 	marker("*")
+	flushTestReadMarkers(c)
 	if len(c.queue) != 1 {
 		t.Fatal("offline local position was not reconciled")
 	}
@@ -86,6 +169,7 @@ func TestIncomingReadMarkersAreMonotonicAndReconcileOnlyOnce(t *testing.T) {
 	}
 	marker("*")
 	marker("timestamp=" + at.Format(ircTimeLayout))
+	flushTestReadMarkers(c)
 	check(0, 0)
 	if len(c.queue) != 0 {
 		t.Fatal("reconciliation kept echoing a stale server marker")
@@ -131,10 +215,12 @@ func TestReadMarkerBeforeConnectedDoesNotConsumeReconciliation(t *testing.T) {
 	}
 	c.ready = true
 	c.receiveReadMarker(event)
+	flushTestReadMarkers(c)
 	if len(c.queue) != 1 || (<-c.queue)[0].Last() != "timestamp="+at.Format(ircTimeLayout) {
 		t.Fatal("ready reply did not reconcile the local read")
 	}
 	c.receiveReadMarker(event)
+	flushTestReadMarkers(c)
 	if len(c.queue) != 0 {
 		t.Fatal("reconciliation repeated")
 	}
@@ -160,6 +246,7 @@ func TestReadMarkerUsesLatestServerMessageTime(t *testing.T) {
 			if n, err := store.Mentions("owner", conv.ID); err != nil || n != 0 {
 				t.Fatalf("marked mention is still unread: %d %v", n, err)
 			}
+			flushTestReadMarkers(c)
 			if capable {
 				select {
 				case batch := <-c.queue:
@@ -204,6 +291,7 @@ func TestManualUnreadStaysLocalUntilReadAgain(t *testing.T) {
 	if _, err := m.UpdateConversation("owner", conv.ID, &read, nil); err != nil {
 		t.Fatal(err)
 	}
+	flushTestReadMarkers(c)
 	<-c.queue
 	check := func(unread int, from string) {
 		t.Helper()
@@ -266,6 +354,7 @@ func TestBoundedReadPreservesLaterMessagesAndManualUnread(t *testing.T) {
 	if err != nil || v.UnreadCount != 1 || v.MentionCount != 1 {
 		t.Fatalf("bounded read: %+v %v", v, err)
 	}
+	flushTestReadMarkers(c)
 	if len(c.queue) != 0 {
 		t.Fatal("sent a timestamp that includes the unread equal-time tie")
 	}
@@ -340,6 +429,7 @@ func TestBoundedReadUsesEarlierSafeUpstreamTimestamp(t *testing.T) {
 	if _, err := m.ReadThrough("owner", conv.ID, "a", nil); err != nil {
 		t.Fatal(err)
 	}
+	flushTestReadMarkers(c)
 	select {
 	case batch := <-c.queue:
 		if got, want := batch[0].Last(), "timestamp="+at.Add(-time.Second).Format(ircTimeLayout); got != want {

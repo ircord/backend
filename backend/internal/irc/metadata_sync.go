@@ -1,14 +1,12 @@
 package irc
 
 import (
+	"slices"
 	"strconv"
 	"time"
 
 	"github.com/lrstanley/girc"
 )
-
-// metadataRetryUnit is the unit of RPL_METADATASYNCLATER's retry-after, a variable for tests.
-var metadataRetryUnit = time.Second
 
 // metadataKeys are the draft/metadata-3 keys IRCord shows for other users.
 var metadataKeys = []string{"display-name", "avatar", "color", "bio", "pronouns", "homepage", "status", "ircord/status-emoji", "ircord/headline", "ircord/banner", "ircord/profile-background", "ircord/profile-accent", "ircord/avatar-frame", "ircord/location", "ircord/timezone", "ircord/languages", "ircord/interests"}
@@ -20,7 +18,9 @@ const (
 	// that are synced with one channel SYNC instead of one SYNC each (a netjoin, say).
 	metadataJoinBurst = 5
 	// metadataRetries bounds how often a target postponed with RPL_METADATASYNCLATER is retried.
-	metadataRetries = 3
+	metadataRetries       = 3
+	metadataSyncReplyWait = 10 * time.Second
+	metadataSyncTargetCap = 512
 )
 
 // A server shares a user's metadata only with sessions that are subscribed and already share
@@ -44,6 +44,13 @@ type metadataSync struct {
 	seen  map[string]map[string]bool
 }
 
+type metadataSyncRequest struct {
+	target, key, batch string
+	event              *girc.Event
+	due, deadline      time.Time
+	retries            int
+}
+
 // subscribeMetadata subscribes to the profile keys, checks and shares our own profile and syncs
 // the channels already joined. It takes only c.mu, so callers may hold the workspace mutex.
 func (c *connection) subscribeMetadata(client *girc.Client) {
@@ -58,8 +65,7 @@ func (c *connection) subscribeMetadata(client *girc.Client) {
 	c.requestMetadataSync(client.ChannelList()...)
 }
 
-// requestMetadataSync asks for the metadata of channels or nicks, in one queue slot. Only the
-// batch answering such a request is treated as complete.
+// requestMetadataSync queues targets and shares one outbound slot across them.
 func (c *connection) requestMetadataSync(targets ...string) {
 	c.requestMetadataSyncForAttempt(nil, targets...)
 }
@@ -69,7 +75,6 @@ func (c *connection) requestMetadataSyncForAttempt(client *girc.Client, targets 
 	if len(targets) == 0 {
 		return
 	}
-	events := make([]*girc.Event, 0, len(targets))
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.metadataSubscribed || (client != nil && (c.client != client || !c.ready || c.transport == nil)) {
@@ -77,16 +82,53 @@ func (c *connection) requestMetadataSyncForAttempt(client *girc.Client, targets 
 		return
 	}
 	if c.metadataRequested == nil {
-		c.metadataRequested = map[string]bool{}
+		c.metadataRequested = map[string]*metadataSyncRequest{}
 	}
 	for _, target := range targets {
-		c.metadataRequested[girc.ToRFC1459(target)] = true
-		events = append(events, &girc.Event{Command: "METADATA", Params: []string{target, "SYNC"}})
-	}
-	if err := c.enqueueLocked(events...); err != nil {
-		for _, target := range targets {
-			delete(c.metadataRequested, girc.ToRFC1459(target))
+		if len(c.metadataRequested) >= metadataSyncTargetCap {
+			break
 		}
+		key := girc.ToRFC1459(target)
+		if c.metadataRequested[key] == nil {
+			request := &metadataSyncRequest{target: target, key: key}
+			c.metadataRequested[key] = request
+			c.metadataSyncQueue = append(c.metadataSyncQueue, request)
+		}
+	}
+	c.dispatchMetadataSyncLocked(time.Now())
+}
+
+func (c *connection) dispatchMetadataSyncLocked(now time.Time) {
+	if request := c.metadataSyncActive; request != nil {
+		if request.deadline.IsZero() || now.Before(request.deadline) {
+			return
+		}
+		c.completeMetadataSyncLocked()
+	}
+	for i, request := range c.metadataSyncQueue {
+		if request.due.After(now) {
+			continue
+		}
+		event := &girc.Event{Command: "METADATA", Params: []string{request.target, "SYNC"}}
+		if c.enqueueLocked(event) == nil {
+			request.event = event
+			c.metadataSyncActive = request
+			c.metadataSyncQueue = slices.Delete(c.metadataSyncQueue, i, i+1)
+		}
+		return
+	}
+}
+
+func (c *connection) completeMetadataSyncLocked() {
+	request := c.metadataSyncActive
+	delete(c.metadataRequested, request.key)
+	delete(c.metadataSyncs, request.batch)
+	c.metadataSyncActive = nil
+}
+
+func (c *connection) startMetadataSyncWriteLocked(event *girc.Event, now time.Time) {
+	if request := c.metadataSyncActive; request != nil && request.event == event {
+		request.deadline = now.Add(metadataSyncReplyWait)
 	}
 }
 
@@ -177,12 +219,10 @@ func (c *connection) openMetadataSync(ref string, e girc.Event) {
 		return
 	}
 	target := e.Params[2]
-	key := girc.ToRFC1459(target)
-	if !c.metadataRequested[key] {
+	request := c.metadataSyncActive
+	if request == nil || request.deadline.IsZero() || request.batch != "" || request.key != girc.ToRFC1459(target) {
 		return
 	}
-	delete(c.metadataRequested, key)
-	delete(c.metadataRetries, key)
 	nicks := []string{target}
 	if girc.IsValidChannel(target) {
 		nicks = nil
@@ -195,9 +235,9 @@ func (c *connection) openMetadataSync(ref string, e girc.Event) {
 	if c.metadataSyncs == nil {
 		c.metadataSyncs = map[string]*metadataSync{}
 	}
-	if len(c.metadataSyncs) < 32 {
-		c.metadataSyncs[ref] = &metadataSync{target: target, nicks: nicks, seen: map[string]map[string]bool{}}
-	}
+	request.batch = ref
+	request.deadline = time.Now().Add(metadataSyncReplyWait)
+	c.metadataSyncs[ref] = &metadataSync{target: target, nicks: nicks, seen: map[string]map[string]bool{}}
 }
 
 // sawMetadata records a value delivered inside a metadata batch. Called with the workspace
@@ -210,6 +250,7 @@ func (c *connection) sawMetadata(e girc.Event, memberID, key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if s := c.metadataSyncs[ref]; s != nil {
+		c.metadataSyncActive.deadline = time.Now().Add(metadataSyncReplyWait)
 		if s.seen[memberID] == nil {
 			s.seen[memberID] = map[string]bool{}
 		}
@@ -292,25 +333,28 @@ func (c *connection) retryMetadataSync(e girc.Event) {
 	}
 	target := e.Params[1]
 	key := girc.ToRFC1459(target)
-	delay := metadataRetryUnit
+	delay := time.Second
 	if len(e.Params) >= 3 {
-		if seconds, err := strconv.Atoi(e.Params[2]); err == nil && seconds > 0 {
-			delay = time.Duration(min(seconds, 60)) * metadataRetryUnit
+		if seconds, err := strconv.ParseUint(e.Params[2], 10, 32); err == nil && seconds > 0 {
+			delay = time.Duration(seconds) * time.Second
 		}
 	}
 	c.mu.Lock()
-	if !c.metadataRequested[key] || c.metadataRetries[key] >= metadataRetries {
-		delete(c.metadataRequested, key)
-		c.mu.Unlock()
+	defer c.mu.Unlock()
+	request := c.metadataSyncActive
+	if request == nil || request.key != key || request.deadline.IsZero() || request.batch != "" {
 		return
 	}
-	if c.metadataRetries == nil {
-		c.metadataRetries = map[string]int{}
+	now := time.Now()
+	if request.retries >= metadataRetries {
+		c.completeMetadataSyncLocked()
+	} else {
+		request.retries++
+		request.due = now.Add(delay)
+		request.deadline = time.Time{}
+		request.event = nil
+		c.metadataSyncActive = nil
+		c.metadataSyncQueue = append(c.metadataSyncQueue, request)
 	}
-	c.metadataRetries[key]++
-	client := c.client
-	c.mu.Unlock()
-	time.AfterFunc(delay, func() {
-		c.requestMetadataSyncForAttempt(client, target)
-	})
+	c.dispatchMetadataSyncLocked(now)
 }

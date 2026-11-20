@@ -24,6 +24,8 @@ type connection struct {
 	serviceBatches         map[string]string
 	ergoServices           bool
 	readMarkersSeen        map[string]bool
+	readMarkerWrites       map[string]readMarkerWrite
+	readMarkerEvents       map[*girc.Event]string
 	realnames              map[string]string
 	typingSent             map[string]typingSent
 	typingReceived         map[string]typingSent
@@ -66,13 +68,14 @@ type connection struct {
 	// message without one clear a bot mark learned from WHO or WHOIS.
 	botTagged bool
 	// Channels waiting for a bot-flags WHO as {folded, name}, and the one outstanding.
-	botWhoPending     [][2]string
-	botWhoOut         string
-	botWhoAt          time.Time
-	botWhoSeen        bool
-	metadataSyncs     map[string]*metadataSync
-	metadataRequested map[string]bool
-	metadataRetries   map[string]int
+	botWhoPending      [][2]string
+	botWhoOut          string
+	botWhoAt           time.Time
+	botWhoSeen         bool
+	metadataSyncs      map[string]*metadataSync
+	metadataRequested  map[string]*metadataSyncRequest
+	metadataSyncQueue  []*metadataSyncRequest
+	metadataSyncActive *metadataSyncRequest
 	// metadataSubscribed is set once METADATA SUB was sent on this connection.
 	metadataSubscribed bool
 	metadataJoined     map[string]bool
@@ -176,7 +179,9 @@ func (c *connection) writer() {
 			return
 		case <-maintenance.C:
 			c.mu.Lock()
-			c.wakeMetadataLocked(time.Now())
+			now := time.Now()
+			c.wakeMetadataLocked(now)
+			c.dispatchMetadataSyncLocked(now)
 			expired := []string{}
 			for id, p := range c.pending {
 				if !p.at.IsZero() && time.Since(p.at) > 15*time.Second {
@@ -189,6 +194,7 @@ func (c *connection) writer() {
 			for _, id := range expired {
 				c.owner.commandUncertain(id, "IRC has not confirmed this message.")
 			}
+			c.flushReadMarkers()
 			c.owner.mu.Unlock()
 			if len(expired) != 0 {
 				c.wakeOutbox(true)
@@ -219,9 +225,11 @@ func (c *connection) writer() {
 			queuedClients := make([]*girc.Client, len(events))
 			c.mu.Lock()
 			var send outboundWrite
+			var readMarker string
 			if len(events) != 0 {
 				send = c.outboundWrites[events[0]]
 				delete(c.outboundWrites, events[0])
+				readMarker = c.readMarkerEvents[events[0]]
 			}
 			for i, event := range events {
 				rawWrites[i] = c.takeRawHistoryWrite(event)
@@ -260,11 +268,17 @@ func (c *connection) writer() {
 						break
 					}
 				}
+				if readMarker != "" && !c.prepareReadMarker(event, readMarker) {
+					break
+				}
 				c.mu.Lock()
 				ready = c.ready && c.client == client && c.transportAliveLocked() &&
 					c.startRawHistoryWrite(rawWrites[i], client) && c.startHistoryWrite(historyWrites[i], client) && c.startSearchWrite(searchWrites[i], client)
 				if ready && i == 0 && send.clientID != "" {
 					ready = c.startOutboundWriteLocked(send)
+				}
+				if ready {
+					c.startMetadataSyncWriteLocked(event, time.Now())
 				}
 				c.mu.Unlock()
 				if !ready {
@@ -278,6 +292,19 @@ func (c *connection) writer() {
 			}
 			if send.clientID != "" {
 				c.finishOutboundWrite(send, written, len(events))
+			}
+			if readMarker != "" {
+				c.mu.Lock()
+				c.finishReadMarkerLocked(events[0], readMarker)
+				c.mu.Unlock()
+			}
+			if written == 0 && len(events) == 1 {
+				c.mu.Lock()
+				if request := c.metadataSyncActive; request != nil && request.event == events[0] {
+					c.completeMetadataSyncLocked()
+					c.dispatchMetadataSyncLocked(time.Now())
+				}
+				c.mu.Unlock()
 			}
 		}
 	}
@@ -471,6 +498,8 @@ func (c *connection) run() {
 			c.permanent = true
 		}
 		c.ready = false
+		c.readMarkerWrites = nil
+		c.readMarkerEvents = nil
 		c.caps = map[string]bool{}
 		c.capValues = map[string]string{}
 		c.batches = map[string]*multiline{}
@@ -478,8 +507,9 @@ func (c *connection) run() {
 		c.searchBatches = nil
 		c.searchQuarantined = false
 		c.metadataSyncs = map[string]*metadataSync{}
-		c.metadataRequested = map[string]bool{}
-		c.metadataRetries = map[string]int{}
+		c.metadataRequested = nil
+		c.metadataSyncQueue = nil
+		c.metadataSyncActive = nil
 		c.metadataSubscribed = false
 		c.metadataWrites = metadataPublisher{retryAt: c.metadataWrites.retryAt}
 		c.profileCheck = nil

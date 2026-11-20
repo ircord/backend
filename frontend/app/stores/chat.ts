@@ -899,7 +899,7 @@ export const useChatStore = defineStore('chat', () => {
         Object.values(outbox).some((list) => list.some((m) => m.clientId === event.clientId))
       ) {
         if (data.value?.demo) setDelivery(event.clientId, 'failed', event.message)
-        else void refreshOutbox()
+        else refreshOutboxNow()
         return
       }
       return notify(event.message)
@@ -1274,10 +1274,12 @@ export const useChatStore = defineStore('chat', () => {
       liveSince.value = null
     },
     synced: (resumed) => {
-      if (connectedOnce) reconnects.value++
+      if (connectedOnce) {
+        reconnects.value++
+        refreshOutboxNow()
+      }
       connectedOnce = true
       liveSince.value = Date.now()
-      void refreshOutbox()
       const activePage = queryCache.getQueryData<MessagePage>(messagesQuery(activeId.value).key)
       if (resumed || historyChangedDuringReplay || activePage?.offline || activePage?.partial)
         void refreshHistory()
@@ -1314,7 +1316,7 @@ export const useChatStore = defineStore('chat', () => {
     (value) => {
       if (!value || ready) return
       ready = true
-      queueMicrotask(() => void refreshOutbox())
+      queueMicrotask(refreshOutboxNow)
       cursor.value = value.cursor
       networkId.value = value.networks[0]?.id ?? ''
       recovery.start()
@@ -1665,11 +1667,41 @@ export const useChatStore = defineStore('chat', () => {
     applyCommand(entry)
   }
 
+  const outboxPollStart = 4_000
+  const outboxPollMax = 30_000
+  const outboxProgress = computed(() =>
+    Object.values(outbox)
+      .flat()
+      .filter((message) => message.delivery === 'queued' || message.delivery === 'pending')
+      .map((message) => `${message.clientId}:${message.delivery}`)
+      .join(','),
+  )
+  let outboxDelay = outboxPollStart
+  let outboxTimer: ReturnType<typeof setTimeout> | undefined
   let refreshingOutbox = false
-  async function refreshOutbox() {
-    if (refreshingOutbox || disposed || !auth.account || data.value?.demo || !navigator.onLine)
-      return
+  let refreshOutboxAgain = false
+
+  const canRefreshOutbox = () =>
+    !disposed && !!auth.account && !data.value?.demo && navigator.onLine
+
+  function scheduleOutboxPoll() {
+    clearTimeout(outboxTimer)
+    if (!refreshingOutbox && canRefreshOutbox() && outboxProgress.value) {
+      outboxTimer = setTimeout(() => void refreshOutbox(false), outboxDelay)
+    }
+  }
+
+  function refreshOutboxNow() {
+    clearTimeout(outboxTimer)
+    outboxDelay = outboxPollStart
+    if (refreshingOutbox) refreshOutboxAgain = true
+    else void refreshOutbox(true)
+  }
+
+  async function refreshOutbox(immediate: boolean) {
+    if (refreshingOutbox || !canRefreshOutbox()) return
     refreshingOutbox = true
+    const before = outboxProgress.value
     try {
       const seen = new Set<string>()
       let query: { after?: string; afterId?: string } = {}
@@ -1700,16 +1732,26 @@ export const useChatStore = defineStore('chat', () => {
       // Keep every copy and try again when the backend is reachable.
     } finally {
       refreshingOutbox = false
+      if (refreshOutboxAgain) {
+        refreshOutboxAgain = false
+        refreshOutboxNow()
+      } else {
+        outboxDelay =
+          !immediate && outboxProgress.value === before
+            ? Math.min(outboxDelay * 2, outboxPollMax)
+            : outboxPollStart
+        scheduleOutboxPoll()
+      }
     }
   }
-  const outboxPoll = setInterval(() => {
-    if (
-      Object.values(outbox).some((list) =>
-        list.some((m) => m.delivery === 'queued' || m.delivery === 'pending'),
-      )
-    )
-      void refreshOutbox()
-  }, 4_000)
+  watch(
+    outboxProgress,
+    () => {
+      outboxDelay = outboxPollStart
+      scheduleOutboxPoll()
+    },
+    { immediate: true },
+  )
   /**
    * Sends to the open conversation, or to `options.conversationId` when given. Markdown-style
    * shortcuts become IRC formatting codes, so other IRC clients see bold and italics too.
@@ -1835,7 +1877,7 @@ export const useChatStore = defineStore('chat', () => {
         resendLocal = true
       } else {
         notifyError(error)
-        void refreshOutbox()
+        refreshOutboxNow()
       }
     } finally {
       sending.delete(id)
@@ -2391,8 +2433,14 @@ export const useChatStore = defineStore('chat', () => {
     flushDrafts()
     return result
   }
-  const onOnline = () => recovery.resume(true)
-  const onOffline = () => recovery.offline()
+  const onOnline = () => {
+    refreshOutboxNow()
+    recovery.resume(true)
+  }
+  const onOffline = () => {
+    clearTimeout(outboxTimer)
+    recovery.offline()
+  }
   const onVisible = () => {
     if (disposed) return
     recovery.visibility(document.visibilityState !== 'visible')
@@ -2438,7 +2486,7 @@ export const useChatStore = defineStore('chat', () => {
     clearTimeout(noticeTimer)
     clearTimeout(readTimer)
     clearTimeout(draftTimer)
-    clearInterval(outboxPoll)
+    clearTimeout(outboxTimer)
     demoPending.forEach(clearTimeout)
     typingTimers.forEach(clearTimeout)
     clearTimeout(typingIdle)

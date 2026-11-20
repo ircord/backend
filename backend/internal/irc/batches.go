@@ -1,6 +1,10 @@
 package irc
 
-import "github.com/lrstanley/girc"
+import (
+	"time"
+
+	"github.com/lrstanley/girc"
+)
 
 type multiline struct {
 	historyRef string
@@ -32,7 +36,10 @@ func (c *connection) batch(e girc.Event) {
 	delete(c.batches, ref)
 	delete(c.historyBatches, ref)
 	sync := c.metadataSyncs[ref]
-	delete(c.metadataSyncs, ref)
+	if sync != nil {
+		c.completeMetadataSyncLocked()
+		c.dispatchMetadataSyncLocked(time.Now())
+	}
 	c.mu.Unlock()
 	if sync != nil {
 		c.finishMetadataSync(sync)

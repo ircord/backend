@@ -85,10 +85,30 @@ try {
   await page.keyboard.press('Escape')
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
 
+  const nextPoll = (timeout) =>
+    page.waitForRequest(
+      (request) =>
+        request.method() === 'GET' && new URL(request.url()).pathname === '/api/v1/outbox',
+      { timeout },
+    )
+  const firstPoll = nextPoll(8_000)
   await composer.fill(browserOnly)
   await composer.press('Enter')
   await page.getByText(browserOnly, { exact: true }).waitFor()
   assert.equal(await composer.textContent(), '')
+  await firstPoll
+  const firstPollAt = performance.now()
+  await nextPoll(12_000)
+  assert(performance.now() - firstPollAt >= 7_000, 'unchanged delivery should slow polling')
+
+  const pollAfterNewSend = nextPoll(7_000)
+  await composer.fill('A new send resets delivery checks')
+  await composer.press('Enter')
+  await pollAfterNewSend
+  const pollAfterReconnect = nextPoll(3_000)
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await pollAfterReconnect
+
   await page.reload()
   await page.getByText(browserOnly, { exact: true }).waitFor()
   await page.getByText(missing, { exact: true }).waitFor()
@@ -125,6 +145,7 @@ try {
   console.log(
     'Outbox preserved a lost HTTP send across reload and recovered one IRC-confirmed message. The unknown send and its duplicate warning remained available.',
   )
+  console.log('Unchanged delivery slowed polling. A new send and reconnect brought checks forward.')
 } catch (error) {
   console.error(serverLog)
   throw error

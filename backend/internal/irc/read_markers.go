@@ -10,6 +10,14 @@ import (
 	"ircord/backend/internal/storage"
 )
 
+const readMarkerFlushLimit = 4
+
+type readMarkerWrite struct {
+	target        string
+	last, pending time.Time
+	queued        *girc.Event
+}
+
 func messageBoundary(msg Message) storage.ReadBoundary {
 	return storage.ReadBoundary{At: msg.CreatedAt, Position: msg.Position, ID: msg.ID}
 }
@@ -256,8 +264,99 @@ func (c *connection) requestReadMarker(target string) {
 }
 
 func (c *connection) sendReadMarker(target string, at time.Time) {
-	if !at.IsZero() && c.hasAll("draft/read-marker", "server-time") {
-		_ = c.enqueue(&girc.Event{Command: "MARKREAD", Params: []string{target, "timestamp=" + at.UTC().Format(ircTimeLayout)}})
+	if at.IsZero() {
+		return
+	}
+	key := c.conversationID(target)
+	at = at.Truncate(time.Millisecond)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.ready || !c.caps["draft/read-marker"] || !c.caps["server-time"] {
+		return
+	}
+	write := c.readMarkerWrites[key]
+	if at.After(write.last) && at.After(write.pending) {
+		write.target, write.pending = target, at
+		c.saveReadMarkerWriteLocked(key, write)
+	}
+}
+
+func (c *connection) saveReadMarkerWriteLocked(key string, write readMarkerWrite) {
+	if c.readMarkerWrites == nil {
+		c.readMarkerWrites = map[string]readMarkerWrite{}
+	}
+	c.readMarkerWrites[key] = write
+}
+
+// The workspace lock protects conversation membership. Keep one queue slot
+// per target while its pending timestamp can still be replaced.
+func (c *connection) flushReadMarkers() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	limit := readMarkerFlushLimit
+	for key, write := range c.readMarkerWrites {
+		if _, ok := c.owner.conversations[key]; !ok {
+			delete(c.readMarkerWrites, key)
+			continue
+		}
+		if write.pending.IsZero() || write.queued != nil {
+			continue
+		}
+		event := &girc.Event{Command: "MARKREAD", Params: []string{write.target}}
+		if c.enqueueLocked(event) != nil {
+			return
+		}
+		if c.readMarkerEvents == nil {
+			c.readMarkerEvents = map[*girc.Event]string{}
+		}
+		c.readMarkerEvents[event] = key
+		write.queued = event
+		c.readMarkerWrites[key] = write
+		limit--
+		if limit == 0 {
+			break
+		}
+	}
+}
+
+// Recheck the safe wire position when the writer reaches the queued slot.
+// Recent history or a manual unread can narrow it while the line waits.
+func (c *connection) prepareReadMarker(event *girc.Event, key string) bool {
+	c.owner.mu.Lock()
+	defer c.owner.mu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	write := c.readMarkerWrites[key]
+	if !c.ready || write.queued != event {
+		return false
+	}
+	if _, ok := c.owner.conversations[key]; !ok || !write.pending.After(write.last) {
+		return false
+	}
+	at, err := c.owner.safeReadMarker(key)
+	if err != nil {
+		return false
+	}
+	at = at.Truncate(time.Millisecond)
+	if write.pending.Before(at) {
+		at = write.pending
+	}
+	write.pending = time.Time{}
+	c.readMarkerWrites[key] = write
+	if !at.After(write.last) {
+		return false
+	}
+	write.last = at
+	c.readMarkerWrites[key] = write
+	event.Params = []string{write.target, "timestamp=" + at.UTC().Format(ircTimeLayout)}
+	return true
+}
+
+func (c *connection) finishReadMarkerLocked(event *girc.Event, key string) {
+	delete(c.readMarkerEvents, event)
+	if write := c.readMarkerWrites[key]; write.queued == event {
+		write.queued = nil
+		c.readMarkerWrites[key] = write
 	}
 }
 
@@ -282,6 +381,17 @@ func (c *connection) receiveReadMarker(e girc.Event) {
 	first := !c.readMarkersSeen[key]
 	c.mu.Lock()
 	ready := c.ready
+	if _, known := w.conversations[key]; known && !at.IsZero() {
+		wireAt := at.Truncate(time.Millisecond)
+		write := c.readMarkerWrites[key]
+		if wireAt.After(write.last) {
+			write.last = wireAt
+			if !write.pending.After(wireAt) {
+				write.pending = time.Time{}
+			}
+			c.saveReadMarkerWriteLocked(key, write)
+		}
+	}
 	c.mu.Unlock()
 	// Ergo may replay a marker before CONNECTED. Reconciliation cannot be sent
 	// yet; leave the first ready reply eligible instead of consuming it here.

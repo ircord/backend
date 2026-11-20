@@ -421,8 +421,8 @@ func TestLifecycleStaleMetadataTimersLeaveNewAttemptAlone(t *testing.T) {
 	c := &connection{
 		ctx: context.Background(), client: current, transport: conn, ready: true,
 		metadataSubscribed: true, metadataJoinTimer: timer,
-		metadataJoins:     map[string]map[string]string{"#new": {"": "#new", "new": "new"}},
-		metadataRequested: map[string]bool{}, queue: make(chan []*girc.Event, 1),
+		metadataJoins: map[string]map[string]string{"#new": {"": "#new", "new": "new"}},
+		queue:         make(chan []*girc.Event, 1),
 	}
 	c.flushJoinSyncs(old)
 	c.requestMetadataSyncForAttempt(old, "stale")

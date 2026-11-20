@@ -56,7 +56,7 @@ async function state(page, target = room) {
   return page.evaluate((target) => {
     const chat = document
       .querySelector('#__nuxt')
-      .__vue_app__.config.globalProperties.$pinia._s.get('chat')
+      ?.__vue_app__?.config.globalProperties.$pinia?._s.get('chat')
     return chat?.data?.conversations.find((c) => (c.target || c.name) === target)
   }, target)
 }
@@ -159,9 +159,9 @@ try {
     'Two authenticated IRCord browsers and a native client share one upstream SASL account.',
   )
 
-  const first = `${nick}: first mention`,
+  const first = `@${nick}: first mention`,
     middle = 'middle message',
-    last = `${nick}: last mention`
+    last = `@${nick}: last mention`
   for (const text of [first, middle, last]) await send(text)
   await counts(pages, 3, 2)
   await read(first)
@@ -228,7 +228,7 @@ try {
   await markAll(a)
   await held
   await marker('read before delayed HTTP response')
-  await send(`${nick}: arrived after mark-read committed`)
+  await send(`@${nick}: arrived after mark-read committed`)
   await counts(pages, 1, 1)
   releaseResponse()
   await delay(400)
@@ -239,7 +239,10 @@ try {
     { times: 1 },
   )
   await markAll(a)
-  await a.getByText('Couldn’t mark this conversation read. Try again.', { exact: true }).waitFor()
+  await a
+    .locator('.toast')
+    .getByText('Couldn’t mark this conversation read. Try again.', { exact: true })
+    .waitFor()
   await counts(pages, 1, 1)
   await markAll(a)
   await counts(pages, 0, 0)
@@ -254,7 +257,7 @@ try {
   await contexts[1].setOffline(true)
   await read('before reload')
   await counts([a], 0, 0)
-  await send(`${nick}: during offline websocket`)
+  await send(`@${nick}: during offline websocket`)
   await send('another during offline websocket')
   await counts([a], 2, 1)
   await contexts[1].setOffline(false)
@@ -296,8 +299,8 @@ try {
     ).status(),
     200,
   )
-  await send(`${nick}: channel while upstream disconnected`)
-  await read(`${nick}: channel while upstream disconnected`)
+  await send(`@${nick}: channel while upstream disconnected`)
+  await read(`@${nick}: channel while upstream disconnected`)
   await send('direct while IRCord disconnected', 'direct')
   await read('direct while IRCord disconnected', 'direct')
   assert.equal(
@@ -328,7 +331,7 @@ try {
       recovery.directs = directs.items?.map((m) => m.text)
       return (
         directs.items.some((m) => m.text === 'direct while IRCord disconnected') &&
-        history.items.some((m) => m.text === `${nick}: channel while upstream disconnected`)
+        history.items.some((m) => m.text === `@${nick}: channel while upstream disconnected`)
       )
     }, 'channel and DM history recovered')
   }
