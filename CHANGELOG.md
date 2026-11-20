@@ -18,7 +18,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 - Everyone signed in can now rename, disable and remove any server emoji. Server owners can limit this to chosen accounts in Administration → Emoji.
 - New servers start with no emoji, instead of five built-in ones.
 - Each emoji in Settings → Emotes has a menu with Rename, Edit aliases, Disable and Remove.
-- Server emoji show as images in the message box as soon as you type `:name:` or pick one. Copying them gives the `:name:` text.
+- Server emoji show as images in the message box, and when you edit a message, as soon as you type `:name:` or pick one. Copying them gives the `:name:` text.
 
 ### Fixed
 

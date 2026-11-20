@@ -8,27 +8,23 @@ const chat = useChatStore()
 const { t } = useI18n()
 const $t = t
 const editing = useMessageEditing()
+const actions = useWorkspaceActions()
 const draft = ref(ircToMarkdown(props.message.text))
-const input = ref<HTMLTextAreaElement | null>(null)
+/** Server emoji show as images, as in the message box; the text stays `:name:`. */
+const input = ref<HTMLElement | null>(null)
+useEmojiField(input, draft, 4000)
 const saving = ref(false)
 
-function resize() {
-  const el = input.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 320)}px`
-}
 onMounted(() => {
-  const el = input.value
+  const el = input.value as HTMLTextAreaElement | null
   if (!el) return
   el.focus()
-  el.setSelectionRange(el.value.length, el.value.length)
-  resize()
+  el.setSelectionRange(draft.value.length, draft.value.length)
 })
 function cancel() {
   editing.stop()
   // Back to the composer, as after sending.
-  nextTick(() => document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus())
+  nextTick(() => actions.focusComposer())
 }
 async function save() {
   if (saving.value) return
@@ -54,16 +50,15 @@ function keydown(event: KeyboardEvent) {
 </script>
 <template>
   <div class="message-editor mt-0.5 mr-0 mb-1 ml-0">
-    <textarea
+    <div
       ref="input"
-      v-model="draft"
+      :contenteditable="saving ? 'false' : 'true'"
+      role="textbox"
+      aria-multiline="true"
       dir="auto"
-      class="block w-full min-h-[38px] py-2 px-3 border border-solid border-[var(--line)] rounded-md bg-secondary text-body font-chat text-[length:var(--message-size)] leading-[1.5] resize-none focus:outline-2 focus:outline-primary focus:outline-offset-[-1px]"
+      class="block w-full min-h-[38px] max-h-80 overflow-y-auto py-2 px-3 border border-solid border-[var(--line)] rounded-md bg-secondary text-body font-chat text-[length:var(--message-size)] leading-[1.5] whitespace-pre-wrap [overflow-wrap:anywhere] caret-[var(--accent)] focus:outline-2 focus:outline-primary focus:outline-offset-[-1px] aria-disabled:opacity-60"
       :aria-label="$t('messageEdit.label')"
-      rows="1"
-      maxlength="4000"
-      :disabled="saving"
-      @input="resize"
+      :aria-disabled="saving || undefined"
       @keydown="keydown"
     />
     <p class="message-editor-hint mt-1 mr-0 mb-0 ml-0 text-[0.75rem] text-muted-foreground">

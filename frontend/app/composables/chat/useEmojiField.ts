@@ -15,7 +15,7 @@ const SHORTCODE = /:([\w+-]{1,64}):/g
  */
 export function useEmojiField(
   field: Ref<HTMLElement | null>,
-  draft: WritableComputedRef<string>,
+  draft: Ref<string> | WritableComputedRef<string>,
   maxLength: number,
 ) {
   const media = useMediaStore()
