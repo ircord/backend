@@ -183,7 +183,7 @@ try {
   await tool('Drafts', '/drafts')
   await page.locator('.draft-open').filter({ hasText: '#general' }).click()
   await page.waitForURL(`${base}/channel/general`)
-  await page.waitForFunction(() => document.activeElement?.tagName === 'TEXTAREA')
+  await page.waitForFunction(() => document.activeElement?.matches('.composer-field'))
   assert.equal(await composer.evaluate((el) => el.value), draft)
 
   await tool('Search', '/search')

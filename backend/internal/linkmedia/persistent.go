@@ -29,7 +29,7 @@ const (
 	objectGrace = 24 * time.Hour
 	// A reservation reads eviction candidates in batches of this size.
 	evictionBatch = 1000
-	cleanupBatch = 100
+	cleanupBatch  = 100
 )
 
 type publicCache struct {
