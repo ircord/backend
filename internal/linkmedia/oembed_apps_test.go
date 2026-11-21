@@ -159,7 +159,7 @@ func b4Resolver(t *testing.T, change func(*http.Request, *http.Response)) (*Reso
 }
 
 func TestOEmbedAppsPinnedFixtures(t *testing.T) {
-	data, err := os.ReadFile("../../../frontend/shared/embed-fixtures/iframely.json")
+	data, err := os.ReadFile("testdata/iframely.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,185 @@
+{
+  "source": "Backend test cases from the original IRCord embed fixture catalog",
+  "fixtures": [
+    {
+      "provider": "cartodb.com",
+      "source": "plugins/domains/cartodb.com.js",
+      "url": "https://rpa.carto.com/viz/9a23d690-6e00-4c87-8d06-608d8bf7ca18/embed_map"
+    },
+    {
+      "provider": "cartodb.com",
+      "source": "plugins/domains/cartodb.com.js",
+      "url": "https://samswey.carto.com/viz/e1005588-93d2-47b6-9a61-f4c0ed001163/embed_map"
+    },
+    {
+      "provider": "cartodb.com",
+      "source": "plugins/domains/cartodb.com.js",
+      "url": "https://rpa.carto.com/viz/f88c9e55-d216-46af-aac8-41de17fa655f/public_map"
+    },
+    {
+      "provider": "cartodb.com",
+      "source": "plugins/domains/cartodb.com.js",
+      "url": "https://csis-enterprise.carto.com/u/csis/viz/4c461308-d73e-11e5-9a49-0e3ff518bd15/public_map"
+    },
+    {
+      "provider": "cnevids.com",
+      "source": "plugins/domains/cnevids.com.js",
+      "url": "https://player.cnevids.com/embed/5670377e94c05f43e9000000/51097beb8ef9aff9f5000008"
+    },
+    {
+      "provider": "cnevids.com",
+      "source": "plugins/domains/cnevids.com.js",
+      "url": "http://player-backend.cnevids.com/iframe/video/54c5640161646d294c080000"
+    },
+    {
+      "provider": "dbdiagram.io",
+      "source": "plugins/domains/dbdiagram.io.js",
+      "url": "https://dbdiagram.io/d/6201630385022f4ee5518762"
+    },
+    {
+      "provider": "dbdiagram.io",
+      "source": "plugins/domains/dbdiagram.io.js",
+      "url": "https://dbdiagram.io/embed/61eeb8797cf3fc0e7c5d74aa"
+    },
+    {
+      "provider": "dbdiagram.io",
+      "source": "plugins/domains/dbdiagram.io.js",
+      "url": "https://dbdiagram.io/d/61f2c0ec85022f4ee5019a3b"
+    },
+    {
+      "provider": "dbdiagram.io",
+      "source": "plugins/domains/dbdiagram.io.js",
+      "url": "https://dbdiagram.io/embed/5cf4e1101f6a891a6a658ef9"
+    },
+    {
+      "provider": "dbdiagram.io",
+      "source": "plugins/domains/dbdiagram.io.js",
+      "url": "https://dbdiagram.io/d/Webtraffic-Syndicate-659ef439ac844320aea87aa0"
+    },
+    {
+      "provider": "issuu.com",
+      "source": "plugins/domains/issuu.com.js",
+      "url": "https://issuu.com/redbulletin.com/docs/the_red_bulletin_stratos_special_us"
+    },
+    {
+      "provider": "issuu.com",
+      "source": "plugins/domains/issuu.com.js",
+      "url": "https://issuu.com/_dca/docs/edicio_n_diario_de_centro_ame_rica_02_de_junio_de_20"
+    },
+    {
+      "provider": "issuu.com",
+      "source": "plugins/domains/issuu.com.js",
+      "url": "https://issuu.com/visitfaroeislands/docs/tg25-uk-web_compressed"
+    },
+    {
+      "provider": "issuu.com",
+      "source": "plugins/domains/issuu.com.js",
+      "url": "https://issuu.com/cbmicheals/docs/wwii_hero_franklin_micheals"
+    },
+    {
+      "provider": "issuu.com",
+      "source": "plugins/domains/issuu.com.js",
+      "url": "https://issuu.com/photoedmagazine/docs/photoed-w24_colour_for_issuu_print_replica"
+    },
+    {
+      "provider": "maps.yandex.ru",
+      "source": "plugins/domains/maps.yandex.ru/maps.yandex.ru.js",
+      "url": "https://yandex.ru/maps/10738/lubercy/?ll=37.894794%2C55.685214&z=14"
+    },
+    {
+      "provider": "maps.yandex.ru",
+      "source": "plugins/domains/maps.yandex.ru/maps.yandex.ru.js",
+      "url": "https://yandex.ru/maps/?ll=36.997338%2C55.519264&z=14"
+    },
+    {
+      "provider": "maps.yandex.ru",
+      "source": "plugins/domains/maps.yandex.ru/maps.yandex.ru.js",
+      "url": "https://yandex.com/maps/213/moscow/?ll=37.624027%2C55.753512&mode=search&poi%5Bpoint%5D=37.621584%2C55.753461&poi%5Buri%5D=ymapsbm1%3A%2F%2Forg%3Foid%3D10661349235&sctx=ZAAAAAgBEAAaKAoSCfFmDd5XtSVAEXmxMEROl0hAEhIJvTeGAODDUEARCOdTxyppQkAiBgABAgMEBSgKOABA3K0HSAFiR3JlYXJyPXNjaGVtZV9Mb2NhbC9HZW91cHBlci9BZHZlcnRzL1JlYXJyYW5nZUJ5QXVjdGlvbi9DYWNoZS9Ub3BMaW1pdD0zYkZyZWFycj1zY2hlbWVfTG9jYWwvR2VvdXBwZXIvQWR2ZXJ0cy9SZWFycmFuZ2VCeUF1Y3Rpb24vQ2FjaGUvRW5hYmxlZD0xagV3b3JsZJ0BzczMPaABAKgBAL0Bis6xfsIBEK%2FV%2BucDsLb2uASh5K7VxQSCAgdrcmVtbGluigIAkgIAmgIMZGVza3RvcC1tYXBz&sll=37.624027%2C55.753512&sspn=0.013025%2C0.006123&text=kremlin&utm_source=share&z=16"
+    },
+    {
+      "provider": "maps.yandex.ru",
+      "source": "plugins/domains/maps.yandex.ru/maps.yandex.ru.short.js",
+      "url": "https://yandex.ru/maps/-/CWS~5QYp"
+    },
+    {
+      "provider": "maps.yandex.ru",
+      "source": "plugins/domains/maps.yandex.ru/maps.yandex.ru.short.js",
+      "url": "https://yandex.com/maps/-/CLu~B4po"
+    },
+    {
+      "provider": "openstreetmap.org",
+      "source": "plugins/domains/openstreetmap.org.js",
+      "url": "https://www.openstreetmap.org/?lat=48.12446&lon=16.42282&zoom=15&layers=M"
+    },
+    {
+      "provider": "openstreetmap.org",
+      "source": "plugins/domains/openstreetmap.org.js",
+      "url": "https://www.openstreetmap.org/?lat=51.5064&lon=-0.1281&zoom=14&layers=MC"
+    },
+    {
+      "provider": "openstreetmap.org",
+      "source": "plugins/domains/openstreetmap.org.js",
+      "url": "https://www.openstreetmap.org/#map=12/50.2598/28.6695"
+    },
+    {
+      "provider": "padlet.com",
+      "source": "plugins/domains/padlet.com.js",
+      "url": "https://padlet.com/musiquerostand/musique_et_publicite"
+    },
+    {
+      "provider": "padlet.com",
+      "source": "plugins/domains/padlet.com.js",
+      "url": "https://padlet.com/angelique_stochmal/6x7j8v4yqrfp"
+    },
+    {
+      "provider": "padlet.com",
+      "source": "plugins/domains/padlet.com.js",
+      "url": "https://padlet.com/duffo_jonathan/rapaublues"
+    },
+    {
+      "provider": "quizlet.com",
+      "source": "plugins/domains/quizlet.com.js",
+      "url": "https://quizlet.com/43729824/conceptual-physics-final-review-part-1-flash-cards/"
+    },
+    {
+      "provider": "quizlet.com",
+      "source": "plugins/domains/quizlet.com.js",
+      "url": "https://quizlet.com/74274924/flashcards"
+    },
+    {
+      "provider": "quizlet.com",
+      "source": "plugins/domains/quizlet.com.js",
+      "url": "https://quizlet.com/43729824/scatter"
+    },
+    {
+      "provider": "quizlet.com",
+      "source": "plugins/domains/quizlet.com.js",
+      "url": "https://quizlet.com/43729824/gravity"
+    },
+    {
+      "provider": "quizlet.com",
+      "source": "plugins/domains/quizlet.com.js",
+      "url": "https://quizlet.com/ca/385594556/math-flash-cards/"
+    },
+    {
+      "provider": "slid.es",
+      "source": "plugins/domains/slid.es.js",
+      "url": "https://slides.com/timkindberg/ui-router"
+    },
+    {
+      "provider": "slid.es",
+      "source": "plugins/domains/slid.es.js",
+      "url": "https://slides.com/thedatacentral/the-data-central"
+    },
+    {
+      "provider": "slid.es",
+      "source": "plugins/domains/slid.es.js",
+      "url": "https://slides.com/sunilos/javaio#/2"
+    },
+    {
+      "provider": "slid.es",
+      "source": "plugins/domains/slid.es.js",
+      "url": "https://slides.com/webmax/angular-status-13"
+    }
+  ]
+}

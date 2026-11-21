@@ -17,7 +17,7 @@ type appFrameFixture struct {
 
 func appFrameFixtures(t *testing.T) []appFrameFixture {
 	t.Helper()
-	data, err := os.ReadFile("../../../frontend/shared/embed-fixtures/iframely.json")
+	data, err := os.ReadFile("testdata/iframely.json")
 	if err != nil {
 		t.Fatal(err)
 	}

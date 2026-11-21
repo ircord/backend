@@ -7,6 +7,7 @@
 !cmd/**
 !internal/
 !internal/**
+internal/linkmedia/testdata/iframely.json
 **/.env
 **/.env.*
 **/*.db*
