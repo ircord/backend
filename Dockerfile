@@ -6,9 +6,9 @@ ARG TARGETARCH
 ARG VERSION=dev
 ARG COMMIT=unknown
 WORKDIR /src
-COPY backend/go.mod backend/go.sum ./
+COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
-COPY backend/ ./
+COPY . ./
 RUN mkdir -p /out/data
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     -o /out/ircord ./cmd/ircord
 
 FROM alpine:latest
-LABEL org.opencontainers.image.source="https://github.com/karbowiak/ircord"
+LABEL org.opencontainers.image.source="https://github.com/ircord/backend"
 RUN apk add --no-cache ca-certificates yt-dlp-core
 COPY --from=build /out/ircord /ircord
 COPY --from=build /src/internal/linkmedia/iframely-providers.LICENSE.txt /usr/share/licenses/ircord/iframely-providers.LICENSE.txt
