@@ -5,6 +5,8 @@ What changed for people using IRCord, newest release first. Each release lists w
 
 ## Unreleased
 
+## v0.7.2 — 2026-11-21
+
 ### Improved
 
 - Pressing and holding a message highlights it, and it stays highlighted while its menu is open.
