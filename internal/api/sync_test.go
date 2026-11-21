@@ -4,13 +4,72 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
 	"ircord/backend/internal/irc"
+	"ircord/backend/internal/storage"
 )
+
+func TestSessionReadyMatchesAccountCapabilities(t *testing.T) {
+	associated, _ := fakeErgo(t)
+	const networkID = "ircord"
+	_, server, store, _ := authenticatedApp(t, func(options *irc.Options) {
+		options.AssociatedServer = associated
+		options.Home = irc.NetworkConfig{ID: networkID}
+		options.Moderation = &irc.ModerationLogin{Operator: "moderator", Password: "test-password"}
+	})
+	for _, test := range []struct {
+		name       string
+		moderation *irc.ModerationCapability
+	}{
+		{name: "owner", moderation: &irc.ModerationCapability{NetworkID: networkID}},
+		{name: "member"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := cookieClient()
+			account := register(t, client, server.URL)
+			if test.moderation != nil {
+				if err := store.GrantOwner(account.Account.ID, storage.OwnerFromOperator, "test"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var bootstrap irc.Snapshot
+			if err := json.Unmarshal(request(t, client, "GET", server.URL+"/api/v1/bootstrap", nil, 200), &bootstrap); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(bootstrap.Capabilities.Moderation, test.moderation) {
+				t.Fatalf("bootstrap moderation = %+v, want %+v", bootstrap.Capabilities.Moderation, test.moderation)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			options := &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Origin": []string{server.URL}}}
+			socket, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/v1/events?sync=1", options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer socket.CloseNow()
+			_, raw, err := socket.Read(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ready sessionReady
+			if err := json.Unmarshal(raw, &ready); err != nil {
+				t.Fatal(err)
+			}
+			if ready.Type != "session.ready" || !ready.Sync || ready.Capabilities == nil {
+				t.Fatalf("expected synchronized session.ready with capabilities, got %s", raw)
+			}
+			if !reflect.DeepEqual(*ready.Capabilities, bootstrap.Capabilities) {
+				t.Fatalf("session.ready capabilities differ from bootstrap: moderation = %+v, want %+v", ready.Capabilities.Moderation, bootstrap.Capabilities.Moderation)
+			}
+		})
+	}
+}
 
 func TestReplayBarrierPrecedesLiveAndHandlesEmptyReplay(t *testing.T) {
 	app, server, _, _ := authenticatedApp(t)

@@ -59,20 +59,20 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unwatch()
-	key := owner(r.Context())
+	accountID := owner(r.Context())
 	s.socketsMu.Lock()
-	if s.sockets[key] >= 16 {
+	if s.sockets[accountID] >= 16 {
 		s.socketsMu.Unlock()
 		writeProblem(w, "too many event connections", http.StatusTooManyRequests)
 		return
 	}
-	s.sockets[key]++
+	s.sockets[accountID]++
 	s.socketsMu.Unlock()
 	defer func() {
 		s.socketsMu.Lock()
-		s.sockets[key]--
-		if s.sockets[key] == 0 {
-			delete(s.sockets, key)
+		s.sockets[accountID]--
+		if s.sockets[accountID] == 0 {
+			delete(s.sockets, accountID)
 		}
 		s.socketsMu.Unlock()
 	}()
@@ -91,13 +91,10 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 		}
 		return writeSocket(ctx, socket, value)
 	}
-	ready := map[string]any{"v": 1, "type": "session.ready", "cursor": s.Manager.Cursor(owner(ctx))}
+	ready := map[string]any{"v": 1, "type": "session.ready", "cursor": s.Manager.Cursor(accountID)}
 	if r.URL.Query().Get("sync") == "1" {
 		ready["sync"] = true
-		ready["capabilities"] = s.capabilities()
-		capabilities := s.capabilities()
-		capabilities.Parties = s.Manager.PartyCapability(owner(ctx))
-		ready["capabilities"] = capabilities
+		ready["capabilities"] = s.capabilities(accountID)
 	}
 	var emoteUpdates <-chan int64
 	if s.options.Emotes != nil {

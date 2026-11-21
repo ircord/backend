@@ -125,13 +125,12 @@ func New(manager *irc.Manager, options Options) *Server {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	huma.Get(s.API, "/api/v1/bootstrap", func(ctx context.Context, _ *struct{}) (*Output[irc.Snapshot], error) {
-		if err := manager.StorageError(owner(ctx)); err != nil {
+		accountID := owner(ctx)
+		if err := manager.StorageError(accountID); err != nil {
 			return result(irc.Snapshot{}, err)
 		}
-		snapshot := manager.Snapshot(owner(ctx))
-		snapshot.Capabilities = s.capabilities()
-		snapshot.Capabilities.Parties = manager.PartyCapability(owner(ctx))
-		snapshot.Capabilities.Moderation = manager.ModerationCapability(owner(ctx))
+		snapshot := manager.Snapshot(accountID)
+		snapshot.Capabilities = s.capabilities(accountID)
 		return result(snapshot, nil)
 	})
 	s.finalizeSpec()
@@ -139,8 +138,12 @@ func New(manager *irc.Manager, options Options) *Server {
 	return s
 }
 
-func (s *Server) capabilities() model.Capabilities {
-	capabilities := model.Capabilities{Themes: &model.ThemeCapability{CustomCSS: !s.options.DisableCustomCSS}}
+func (s *Server) capabilities(accountID string) model.Capabilities {
+	capabilities := model.Capabilities{
+		Themes:     &model.ThemeCapability{CustomCSS: !s.options.DisableCustomCSS},
+		Parties:    s.Manager.PartyCapability(accountID),
+		Moderation: s.Manager.ModerationCapability(accountID),
+	}
 	if s.options.Files != nil {
 		p := s.options.Files.LocalProvider()
 		if p.Available {
