@@ -12,6 +12,7 @@ What changed for people using IRCord, newest release first. Each release lists w
 ### Fixed
 
 - On phones, long menus scroll instead of squeezing their items until some are cut off.
+- On phones, swiping a message to reply keeps the conversation at the newest message, and your reply follows it down once sent.
 
 ## v0.7.1 — 2026-11-21
 

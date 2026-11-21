@@ -46,14 +46,26 @@ useEventListener(window, 'touchcancel', touchEnded, { passive: true })
 useEventListener(window, 'blur', release)
 
 let touchY = 0
+let touchStart = { x: 0, y: 0 }
+/**
+ * Whether this touch scrolls, decided once it has moved 10px. A sideways swipe (reply, drawers)
+ * never counts as scrolling, whatever its small vertical drift.
+ */
+let scrolling: boolean | undefined
 function onTouchStart(event: TouchEvent) {
   touchY = event.touches[0]?.clientY ?? 0
+  touchStart = { x: event.touches[0]?.clientX ?? 0, y: touchY }
+  scrolling = undefined
   userPointer(true)
 }
 function onTouchMove(event: TouchEvent) {
   if (event.touches.length !== 1) return
-  const nextY = event.touches[0]!.clientY
-  if (nextY !== touchY) userScrollIntent(nextY > touchY ? 'up' : 'down')
+  const touch = event.touches[0]!
+  const dx = Math.abs(touch.clientX - touchStart.x)
+  const dy = Math.abs(touch.clientY - touchStart.y)
+  if (scrolling === undefined && Math.hypot(dx, dy) > 10) scrolling = dx < dy * 1.2
+  const nextY = touch.clientY
+  if (scrolling && nextY !== touchY) userScrollIntent(nextY > touchY ? 'up' : 'down')
   touchY = nextY
 }
 function onWheel(event: WheelEvent) {
