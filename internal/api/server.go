@@ -95,6 +95,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	s.registerNetworkAPI()
 	s.registerServices()
 	s.registerAppData()
+	s.registerChangelog()
 	s.registerNotifications()
 	s.registerActivity()
 	s.registerSaved()

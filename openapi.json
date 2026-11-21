@@ -623,6 +623,39 @@
         ],
         "type": "object"
       },
+      "BackendChangelog": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/BackendChangelog.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "releases": {
+            "description": "Release notes embedded in this backend build, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/Release"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "version": {
+            "description": "Version of the backend serving this request.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "releases"
+        ],
+        "type": "object"
+      },
       "BrowserSubscription": {
         "additionalProperties": false,
         "properties": {
@@ -7811,6 +7844,26 @@
         "required": [
           "registrationEnabled",
           "registrationKeyRequired"
+        ],
+        "type": "object"
+      },
+      "Release": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "date",
+          "notes"
         ],
         "type": "object"
       },
@@ -16485,6 +16538,152 @@
           }
         ],
         "summary": "Get API v1 bootstrap",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/api/v1/changelog": {
+      "get": {
+        "operationId": "get-api-v1-changelog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendChangelog"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "501": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Get API v1 changelog",
         "tags": [
           "Chat"
         ]
