@@ -147,8 +147,8 @@ func (s *Server) finalizeSpec() {
 	registry.Map()["ServerEvent"] = &huma.Schema{Type: "object", OneOf: all, Discriminator: &huma.Discriminator{PropertyName: "type", Mapping: discriminators}}
 	registry.Map()["ClientEvent"] = &huma.Schema{OneOf: []*huma.Schema{schema(sessionResume{}, "SessionResume"), schema(typingCommand{}, "TypingCommand")}}
 	registry.Map()["TraceEvent"] = &huma.Schema{OneOf: []*huma.Schema{schema(traceLine{}, "TraceLine"), schema(traceResync{}, "TraceResync")}}
-	// Opaque frontend-owned JSON documents intentionally remain unknown. Notification
-	// levels, in contrast, have a finite value set shared by the server and client.
+	// Legacy account documents are opaque JSON. Notification levels have a
+	// finite value set shared by the server and client.
 	if settings := registry.Map()["Settings"]; settings != nil {
 		if levels := settings.Properties["levels"]; levels != nil {
 			levels.AdditionalProperties = &huma.Schema{Type: "string", Enum: []any{"all", "mentions", "none"}}
@@ -172,8 +172,11 @@ func (s *Server) finalizeSpec() {
 			operation.Tags = []string{apiTag(path)}
 			if admin.IsPath(path) {
 				operation.Security = []map[string][]string{{"adminBearer": {}}}
-			} else if !strings.HasPrefix(path, "/files/") && path != "/api/v1/auth/signup" && path != "/api/v1/auth/login" && path != "/api/v1/auth/session" && path != "/api/v1/auth/username" && path != "/api/v1/auth/registration" {
+			} else if !publicAppRead(operation.Method, path) && !strings.HasPrefix(path, "/files/") && path != "/api/v1/auth/signup" && path != "/api/v1/auth/login" && path != "/api/v1/auth/session" && path != "/api/v1/auth/username" && path != "/api/v1/auth/registration" {
 				operation.Security = []map[string][]string{{"sessionCookie": {}}}
+			}
+			if strings.HasPrefix(path, "/api/v1/app/") {
+				continue
 			}
 			for _, code := range []string{"400", "401", "403", "404", "409", "413", "422", "429", "500", "501", "503"} {
 				if operation.Responses[code] == nil {
@@ -203,7 +206,7 @@ func apiTag(path string) string {
 	if strings.Contains(path, "/notifications") || strings.Contains(path, "/push") {
 		return "Notifications"
 	}
-	if strings.Contains(path, "/app-data") || strings.Contains(path, "/hash-field") {
+	if strings.Contains(path, "/app-data") || strings.HasPrefix(path, "/api/v1/app/") || strings.Contains(path, "/hash-field") {
 		return "App data"
 	}
 	if strings.Contains(path, "/networks") {

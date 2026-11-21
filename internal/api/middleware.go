@@ -64,6 +64,10 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if publicAppRead(r.Method, r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		r = r.WithContext(context.WithValue(r.Context(), requestKey{}, httpState{w, r}))
 		// Admin credentials never become an account owner or fall back to a cookie.
 		// Keep the shared origin check above this boundary for browser callers.

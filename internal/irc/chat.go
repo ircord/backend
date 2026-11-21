@@ -113,7 +113,7 @@ func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed 
 	if encoded := e.Tags["+ircord/gif"]; len(encoded) > 0 && len(encoded) <= 2500 {
 		if raw, err := base64.RawURLEncoding.DecodeString(encoded); err == nil {
 			var gif GIF
-			if json.Unmarshal(raw, &gif) == nil && validGIF(&gif) && gif.URL == msg.Text {
+			if json.Unmarshal(raw, &gif) == nil && ValidGIF(&gif) && gif.URL == msg.Text {
 				msg.GIF = &gif
 			}
 		}
@@ -267,7 +267,8 @@ func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed 
 	}
 }
 
-func validGIF(g *GIF) bool {
+// ValidGIF checks Klipy media metadata. A nil GIF is valid for a text message.
+func ValidGIF(g *GIF) bool {
 	if g == nil {
 		return true
 	}
@@ -291,7 +292,7 @@ func normalizeSendInput(input *SendInput) error {
 	if input.Kind != "message" && input.Kind != "action" {
 		return fmt.Errorf("invalid message kind")
 	}
-	if !token(input.ClientID, 100) || strings.TrimSpace(input.Text) == "" || utf8.RuneCountInString(input.Text) > 4000 || len(input.Text) > 4096 || strings.ContainsAny(input.Text, "\r\x00") || !validGIF(input.GIF) || (input.GIF != nil && input.Text != input.GIF.URL) {
+	if !token(input.ClientID, 100) || strings.TrimSpace(input.Text) == "" || utf8.RuneCountInString(input.Text) > 4000 || len(input.Text) > 4096 || strings.ContainsAny(input.Text, "\r\x00") || !ValidGIF(input.GIF) || (input.GIF != nil && input.Text != input.GIF.URL) {
 		return fmt.Errorf("invalid message (maximum 4000 characters / 4096 UTF-8 bytes)")
 	}
 	return nil

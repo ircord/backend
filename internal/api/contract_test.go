@@ -38,7 +38,9 @@ func TestPublishedContractAndAuthentication(t *testing.T) {
 			_, secured := op["security"]
 			// File downloads use the URL's token, including party attachments.
 			// They do not require a login cookie.
-			public := strings.HasPrefix(path, "/files/") || path == "/api/v1/auth/session" || path == "/api/v1/auth/login" || path == "/api/v1/auth/signup" || path == "/api/v1/auth/username" || path == "/api/v1/auth/registration"
+			public := strings.HasPrefix(path, "/files/") || path == "/api/v1/auth/session" || path == "/api/v1/auth/login" || path == "/api/v1/auth/signup" || path == "/api/v1/auth/username" || path == "/api/v1/auth/registration" ||
+				(path == "/api/v1/app/emoji/catalog" && method == "get") ||
+				(path == "/api/v1/app/speech/zonos3/{version}/models/{model}/{file}" && (method == "get" || method == "head"))
 			if secured == public {
 				t.Fatalf("incorrect security declaration: %s %s", method, path)
 			}

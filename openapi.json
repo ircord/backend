@@ -482,6 +482,265 @@
         ],
         "type": "object"
       },
+      "AppEmoji": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "creator": {
+            "type": "string"
+          },
+          "group": {
+            "enum": [
+              "workspace",
+              "7tv"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "shortcode": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "workspace",
+              "7tv"
+            ],
+            "type": "string"
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "staticUrl": {
+            "description": "URL or path to a still image.",
+            "type": "string"
+          },
+          "url": {
+            "description": "Preview URL or path to a bundled image.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "shortcode",
+          "aliases",
+          "group",
+          "url",
+          "staticUrl",
+          "source"
+        ],
+        "type": "object"
+      },
+      "AppEmojiCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/AppEmojiCatalog.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "items": {
+            "description": "Bundled workspace emoji and the cached 7TV global set.",
+            "items": {
+              "$ref": "#/components/schemas/AppEmoji"
+            },
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "standardUrl": {
+            "description": "Path to the Unicode catalog bundled with the frontend.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "standardUrl",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "Appearance": {
+        "additionalProperties": false,
+        "properties": {
+          "accent": {
+            "enum": [
+              "scheme",
+              "custom",
+              "lavender",
+              "indigo",
+              "blue",
+              "sky",
+              "teal",
+              "emerald",
+              "lime",
+              "amber",
+              "orange",
+              "rose",
+              "pink",
+              "fuchsia"
+            ],
+            "type": "string"
+          },
+          "accentCustom": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "animateMedia": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "coloredNames": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "corners": {
+            "enum": [
+              "rounded",
+              "soft",
+              "square"
+            ],
+            "type": "string"
+          },
+          "density": {
+            "enum": [
+              "comfortable",
+              "compact"
+            ],
+            "type": "string"
+          },
+          "font": {
+            "enum": [
+              "geist",
+              "inter",
+              "ibm-plex",
+              "manrope",
+              "nunito",
+              "atkinson",
+              "source-sans",
+              "system"
+            ],
+            "type": "string"
+          },
+          "groupSpacing": {
+            "description": "Pixels between message groups.",
+            "format": "int64",
+            "maximum": 24,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "interfaceScale": {
+            "description": "Interface scale in percent.",
+            "format": "int64",
+            "maximum": 150,
+            "minimum": 85,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "messageFont": {
+            "enum": [
+              "interface",
+              "atkinson",
+              "lexend",
+              "serif",
+              "literata",
+              "jetbrains-mono",
+              "geist-mono",
+              "atkinson-mono"
+            ],
+            "type": "string"
+          },
+          "messageLayout": {
+            "enum": [
+              "cozy",
+              "compact",
+              "irc"
+            ],
+            "type": "string"
+          },
+          "messageSize": {
+            "format": "int64",
+            "maximum": 20,
+            "minimum": 12,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "system",
+              "dark",
+              "light"
+            ],
+            "type": "string"
+          },
+          "motion": {
+            "enum": [
+              "system",
+              "full",
+              "reduced"
+            ],
+            "type": "string"
+          },
+          "schemeDark": {
+            "description": "Dark scheme identifier. Defaults to ircord-dark.",
+            "maxLength": 63,
+            "type": "string"
+          },
+          "schemeLight": {
+            "description": "Light scheme identifier. Defaults to ircord-light.",
+            "maxLength": 63,
+            "type": "string"
+          },
+          "theme": {
+            "description": "Saved theme ID, or null to use the scheme.",
+            "pattern": "^[A-Za-z0-9_-]{1,40}$",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeFormat": {
+            "enum": [
+              "24h",
+              "12h"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AppearanceUpdatedEvent": {
         "additionalProperties": false,
         "properties": {
@@ -1404,6 +1663,87 @@
             "$ref": "#/components/schemas/TypingCommand"
           }
         ]
+      },
+      "ClientPreferences": {
+        "additionalProperties": false,
+        "properties": {
+          "askBeforeEmbeds": {
+            "type": "boolean"
+          },
+          "channelGuideSeen": {
+            "type": "boolean"
+          },
+          "events": {
+            "enum": [
+              "show",
+              "collapse",
+              "hide"
+            ],
+            "type": "string"
+          },
+          "networkIcons": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Network IDs mapped to PNG, JPEG or WebP data URLs up to 64 KiB each.",
+            "maxProperties": 30,
+            "type": "object"
+          },
+          "nsfwNetworks": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Legacy opt-ins by network ID.",
+            "maxProperties": 100,
+            "type": "object"
+          },
+          "registerChannels": {
+            "description": "Register new home-network channels. Defaults to true.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "shortcuts": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/Shortcut"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "description": "Keyboard overrides by action. An empty list clears the bindings for that action.",
+            "maxProperties": 100,
+            "type": "object"
+          },
+          "showNsfw": {
+            "type": "boolean"
+          },
+          "sidebarOrder": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "description": "Up to 200 ordered conversation IDs per sidebar section.",
+            "maxProperties": 50,
+            "type": "object"
+          },
+          "speech": {
+            "$ref": "#/components/schemas/SpeechService",
+            "description": "Speech service settings. API keys stay on the device."
+          },
+          "startup": {
+            "$ref": "#/components/schemas/Startup"
+          }
+        },
+        "type": "object"
       },
       "CommandError": {
         "additionalProperties": false,
@@ -2818,6 +3158,32 @@
         "required": [
           "restricted",
           "managers"
+        ],
+        "type": "object"
+      },
+      "EmojiUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "format": "int64",
+            "maximum": 1000000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "lastUsed": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "count",
+          "lastUsed"
         ],
         "type": "object"
       },
@@ -4653,6 +5019,107 @@
           "at",
           "ms"
         ],
+        "type": "object"
+      },
+      "Library": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/Library.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "emojiUsage": {
+            "description": "Emoji ranked by use count with a two-week half-life.",
+            "items": {
+              "$ref": "#/components/schemas/EmojiUsage"
+            },
+            "maxItems": 120,
+            "type": "array"
+          },
+          "gifs": {
+            "description": "Saved Klipy GIFs, most recently saved first.",
+            "items": {
+              "$ref": "#/components/schemas/SavedGIF"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "skinTone": {
+            "enum": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "gifs",
+          "emojiUsage",
+          "skinTone",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "LibraryPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/LibraryPatch.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "recent": {
+            "description": "Picked IDs in oldest-to-newest order.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "skinTone": {
+            "enum": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ],
+            "type": "string"
+          },
+          "uses": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "description": "Emoji ID to additional picks. Each positive count is capped at 100.",
+            "maxProperties": 100,
+            "type": "object"
+          }
+        },
         "type": "object"
       },
       "LibraryUpdatedEvent": {
@@ -8071,6 +8538,48 @@
         ],
         "type": "object"
       },
+      "Save-app-appearanceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/Save-app-appearanceRequest.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/Appearance"
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "type": "object"
+      },
+      "Save-app-preferencesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/Save-app-preferencesRequest.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/ClientPreferences"
+          }
+        },
+        "required": [
+          "preferences"
+        ],
+        "type": "object"
+      },
       "Save-push-subscriptionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8096,6 +8605,39 @@
         ],
         "type": "object"
       },
+      "SaveAppThemeInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/SaveAppThemeInputBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "expected": {
+            "description": "The updatedAt value the editor loaded. Null for a new theme.",
+            "maxLength": 40,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "force": {
+            "description": "Replace the theme even when its saved version changed.",
+            "type": "boolean"
+          },
+          "theme": {
+            "$ref": "#/components/schemas/Theme"
+          }
+        },
+        "required": [
+          "theme"
+        ],
+        "type": "object"
+      },
       "SaveInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -8116,6 +8658,64 @@
         },
         "required": [
           "conversationId"
+        ],
+        "type": "object"
+      },
+      "SavePickerGIF": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/SavePickerGIF.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "height": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "previewUrl": {
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "klipy"
+            ],
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "stillUrl": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "url",
+          "previewUrl",
+          "stillUrl",
+          "width",
+          "height",
+          "provider"
         ],
         "type": "object"
       },
@@ -8147,6 +8747,60 @@
           "seq",
           "type",
           "data"
+        ],
+        "type": "object"
+      },
+      "SavedGIF": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "previewUrl": {
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "klipy"
+            ],
+            "type": "string"
+          },
+          "savedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "stillUrl": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "savedAt",
+          "id",
+          "slug",
+          "title",
+          "url",
+          "previewUrl",
+          "stillUrl",
+          "width",
+          "height",
+          "provider"
         ],
         "type": "object"
       },
@@ -9139,6 +9793,29 @@
         ],
         "type": "object"
       },
+      "Shortcut": {
+        "additionalProperties": false,
+        "properties": {
+          "alt": {
+            "type": "boolean"
+          },
+          "key": {
+            "maxLength": 20,
+            "minLength": 1,
+            "type": "string"
+          },
+          "mod": {
+            "type": "boolean"
+          },
+          "shift": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      },
       "SignupCredentials": {
         "additionalProperties": false,
         "properties": {
@@ -9250,6 +9927,46 @@
         ],
         "type": "object"
       },
+      "SpeechService": {
+        "additionalProperties": false,
+        "properties": {
+          "baseUrl": {
+            "description": "HTTPS base URL, or HTTP on loopback. Leave empty to disable. Credentials, queries and fragments are forbidden.",
+            "maxLength": 500,
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "voice": {
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Startup": {
+        "additionalProperties": false,
+        "properties": {
+          "channelId": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "last",
+              "channel"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "Status": {
         "additionalProperties": false,
         "properties": {
@@ -9309,6 +10026,80 @@
           "version",
           "commit",
           "goVersion"
+        ],
+        "type": "object"
+      },
+      "StoredAppearance": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/StoredAppearance.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Appearance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The account's appearance. Null until saved."
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "settings",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "StoredPreferences": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/StoredPreferences.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "preferences": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientPreferences"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The account's preferences. Null until saved."
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "preferences",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -9399,6 +10190,147 @@
         ],
         "type": "object"
       },
+      "Theme": {
+        "additionalProperties": false,
+        "properties": {
+          "background": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeBackground"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "base": {
+            "$ref": "#/components/schemas/ThemeBase"
+          },
+          "colors": {
+            "$ref": "#/components/schemas/ThemeColors"
+          },
+          "css": {
+            "description": "Custom CSS up to 64 KiB. Clients filter CSS before applying it.",
+            "type": "string"
+          },
+          "format": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "id": {
+            "description": "The save route takes the ID from the path.",
+            "pattern": "^[A-Za-z0-9_-]{1,40}$",
+            "type": "string"
+          },
+          "madeWith": {
+            "maxLength": 40,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 60,
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Version of the stored theme. The server sets it on save.",
+            "maxLength": 40,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ThemeBackground": {
+        "additionalProperties": false,
+        "properties": {
+          "blur": {
+            "format": "int64",
+            "maximum": 20,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "dim": {
+            "format": "int64",
+            "maximum": 90,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "fit": {
+            "enum": [
+              "cover",
+              "contain",
+              "tile"
+            ],
+            "type": "string"
+          },
+          "panelOpacity": {
+            "format": "int64",
+            "maximum": 100,
+            "minimum": 40,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "placement": {
+            "enum": [
+              "conversation",
+              "app"
+            ],
+            "type": "string"
+          },
+          "position": {
+            "enum": [
+              "center",
+              "top",
+              "bottom",
+              "left",
+              "right"
+            ],
+            "type": "string"
+          },
+          "tones": {
+            "description": "Two measured image colors, dark then light, or null.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "url": {
+            "description": "An upload path on this instance. Null if an imported theme needs an image.",
+            "maxLength": 800,
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ThemeBase": {
+        "additionalProperties": false,
+        "properties": {
+          "dark": {
+            "maxLength": 63,
+            "type": "string"
+          },
+          "light": {
+            "maxLength": 63,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ThemeCapability": {
         "additionalProperties": false,
         "properties": {
@@ -9409,6 +10341,237 @@
         },
         "required": [
           "customCss"
+        ],
+        "type": "object"
+      },
+      "ThemeColors": {
+        "additionalProperties": false,
+        "properties": {
+          "dark": {
+            "$ref": "#/components/schemas/ThemeSeeds"
+          },
+          "light": {
+            "$ref": "#/components/schemas/ThemeSeeds"
+          }
+        },
+        "type": "object"
+      },
+      "ThemeConflict": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/ThemeConflict.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ThemeConflictDataStruct"
+          },
+          "detail": {
+            "description": "A human-readable explanation specific to this occurrence of the problem.",
+            "examples": [
+              "Property foo is required but is missing."
+            ],
+            "type": "string"
+          },
+          "errors": {
+            "description": "Optional list of individual error details",
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "instance": {
+            "description": "A URI reference that identifies the specific occurrence of the problem.",
+            "examples": [
+              "https://example.com/error-log/abc123"
+            ],
+            "format": "uri",
+            "type": "string"
+          },
+          "status": {
+            "description": "HTTP status code",
+            "examples": [
+              400
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
+            "examples": [
+              "Bad Request"
+            ],
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "description": "A URI reference to human-readable documentation for the error.",
+            "examples": [
+              "https://example.com/errors/example"
+            ],
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "ThemeConflictDataStruct": {
+        "additionalProperties": false,
+        "properties": {
+          "theirs": {
+            "$ref": "#/components/schemas/Theme",
+            "description": "The current saved theme."
+          }
+        },
+        "required": [
+          "theirs"
+        ],
+        "type": "object"
+      },
+      "ThemePalette": {
+        "additionalProperties": false,
+        "properties": {
+          "blue": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "cyan": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "green": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "orange": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "pink": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "purple": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "red": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "yellow": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "red",
+          "orange",
+          "yellow",
+          "green",
+          "cyan",
+          "blue",
+          "purple",
+          "pink"
+        ],
+        "type": "object"
+      },
+      "ThemeSeeds": {
+        "additionalProperties": false,
+        "properties": {
+          "accent": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "canvas": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "ink": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "muted": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "overlay": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          },
+          "palette": {
+            "$ref": "#/components/schemas/ThemePalette"
+          },
+          "surface": {
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canvas",
+          "surface",
+          "overlay",
+          "ink",
+          "muted",
+          "accent",
+          "palette"
+        ],
+        "type": "object"
+      },
+      "Themes": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/Themes.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "customCss": {
+            "description": "The account's opt-in to using its stored custom CSS.",
+            "type": "boolean"
+          },
+          "format": {
+            "enum": [
+              1
+            ],
+            "format": "int64",
+            "type": "integer"
+          },
+          "themes": {
+            "items": {
+              "$ref": "#/components/schemas/Theme"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "format",
+          "customCss",
+          "themes",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -9640,6 +10803,27 @@
           "v",
           "type",
           "data"
+        ],
+        "type": "object"
+      },
+      "Update-app-themesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/Update-app-themesRequest.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "customCss": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "customCss"
         ],
         "type": "object"
       },
@@ -14593,6 +15777,1493 @@
             "sessionCookie": []
           }
         ],
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/appearance": {
+      "get": {
+        "description": "Returns the signed-in account's appearance. Settings and update time are null before the first save.",
+        "operationId": "get-app-appearance",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredAppearance"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read account appearance",
+        "tags": [
+          "App data"
+        ]
+      },
+      "put": {
+        "description": "Replaces the signed-in account's appearance. Omitted settings use their defaults.",
+        "operationId": "save-app-appearance",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Save-app-appearanceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredAppearance"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Save account appearance",
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/emoji/catalog": {
+      "get": {
+        "description": "Lists bundled workspace emoji and up to 100 entries from the cached 7TV global set. Uses a bundled snapshot when 7TV is unavailable.",
+        "operationId": "get-app-emoji-catalog",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppEmojiCatalog"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Read the public emoji catalog",
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/library": {
+      "get": {
+        "description": "Returns the signed-in account's saved GIFs, emoji usage and skin tone.",
+        "operationId": "get-app-library",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read the picker library",
+        "tags": [
+          "App data"
+        ]
+      },
+      "patch": {
+        "description": "Adds emoji picks to the signed-in account's counts and sets its default skin tone when supplied.",
+        "operationId": "update-app-library",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibraryPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Update emoji usage and skin tone",
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/library/gifs": {
+      "post": {
+        "description": "Saves a Klipy GIF for the signed-in account. Saving the same ID moves it to the front. The 200 most recent favorites are retained.",
+        "operationId": "save-app-gif",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavePickerGIF"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Save a GIF to the picker library",
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/library/gifs/{id}": {
+      "delete": {
+        "description": "Removes the GIF from the signed-in account's library. An absent ID leaves the library contents as they are.",
+        "operationId": "delete-app-gif",
+        "parameters": [
+          {
+            "description": "ID of the saved GIF.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "ID of the saved GIF.",
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Library"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Remove a saved GIF",
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/preferences": {
+      "get": {
+        "description": "Returns the signed-in account's preferences. Preferences and update time are null before the first save.",
+        "operationId": "get-app-preferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredPreferences"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read account preferences",
+        "tags": [
+          "App data"
+        ]
+      },
+      "put": {
+        "description": "Replaces the signed-in account's preferences. Omitted preferences use their defaults. Device secrets do not belong in this document.",
+        "operationId": "save-app-preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Save-app-preferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredPreferences"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Save account preferences",
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/speech/zonos3/{version}/models/{model}/{file}": {
+      "get": {
+        "description": "Redirects a recognized shard name to the pinned public model release. Unknown names return 404.",
+        "operationId": "get-app-speech-shard",
+        "parameters": [
+          {
+            "description": "The version of the frontend's bundled model manifests.",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "description": "The version of the frontend's bundled model manifests.",
+              "maxLength": 16,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The backbone or zac model.",
+            "in": "path",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "description": "The backbone or zac model.",
+              "maxLength": 24,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of a shard listed in the shipped model manifest.",
+            "in": "path",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "description": "Name of a shard listed in the shipped model manifest.",
+              "maxLength": 32,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Location": {
+                "schema": {
+                  "description": "The shard URL at the pinned model revision.",
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Redirect to a public read-aloud model shard",
+        "tags": [
+          "App data"
+        ]
+      },
+      "head": {
+        "description": "Redirects a recognized shard name to the pinned public model release. Unknown names return 404.",
+        "operationId": "head-app-speech-shard",
+        "parameters": [
+          {
+            "description": "The version of the frontend's bundled model manifests.",
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "description": "The version of the frontend's bundled model manifests.",
+              "maxLength": 16,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The backbone or zac model.",
+            "in": "path",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "description": "The backbone or zac model.",
+              "maxLength": 24,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Name of a shard listed in the shipped model manifest.",
+            "in": "path",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "description": "Name of a shard listed in the shipped model manifest.",
+              "maxLength": 32,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Found",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Location": {
+                "schema": {
+                  "description": "The shard URL at the pinned model revision.",
+                  "type": "string"
+                }
+              },
+              "Referrer-Policy": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Redirect to a public read-aloud model shard",
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/themes": {
+      "get": {
+        "description": "Returns the signed-in account's themes and custom CSS preference.",
+        "operationId": "get-app-themes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Themes"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Read the theme library",
+        "tags": [
+          "App data"
+        ]
+      },
+      "patch": {
+        "description": "Sets whether the signed-in account uses its theme CSS. The themes remain saved.",
+        "operationId": "update-app-themes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Update-app-themesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Themes"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Set the custom CSS preference",
+        "tags": [
+          "App data"
+        ]
+      }
+    },
+    "/api/v1/app/themes/{id}": {
+      "delete": {
+        "description": "Removes a theme from the signed-in account. An absent ID leaves the library contents as they are.",
+        "operationId": "delete-app-theme",
+        "parameters": [
+          {
+            "description": "ID of the personal theme.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "ID of the personal theme.",
+              "pattern": "^[A-Za-z0-9_-]{1,40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Themes"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Remove a saved theme",
+        "tags": [
+          "App data"
+        ]
+      },
+      "put": {
+        "description": "Creates a theme or replaces the theme with this ID. A changed version returns 412 with the current theme unless force is true.",
+        "operationId": "save-app-theme",
+        "parameters": [
+          {
+            "description": "ID of the personal theme.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "ID of the personal theme.",
+              "pattern": "^[A-Za-z0-9_-]{1,40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveAppThemeInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Themes"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "412": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeConflict"
+                }
+              }
+            },
+            "description": "The theme changed since the edit began."
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Save a personal theme",
         "tags": [
           "App data"
         ]

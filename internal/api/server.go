@@ -65,6 +65,7 @@ type Server struct {
 	linkMedia  linkMediaCache
 	images     imagevariant.Cache
 	guideFacts guideFacts
+	appEmoji   appEmojiCache
 }
 
 func New(manager *irc.Manager, options Options) *Server {
@@ -95,6 +96,8 @@ func New(manager *irc.Manager, options Options) *Server {
 	s.registerNetworkAPI()
 	s.registerServices()
 	s.registerAppData()
+	s.registerAppSettings()
+	s.registerAppPublic()
 	s.registerChangelog()
 	s.registerNotifications()
 	s.registerActivity()
