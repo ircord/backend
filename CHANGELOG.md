@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.7.6 — 2026-11-21
+
 ### Fixed
 
 - Server owners keep access to message deletion and bot marking when the app reconnects.
