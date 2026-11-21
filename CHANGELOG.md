@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.7.5 — 2026-11-21
+
+### New
+
+- Applications can read and save account settings, saved GIFs, emoji usage, and themes through the documented account API.
+
 ## v0.7.4 — 2026-11-21
 
 - The backend checks and container publish run from the backend repository.
