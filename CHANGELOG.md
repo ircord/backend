@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- The link gallery lists a link written as `[text](url)` under its real address, with or without parentheses in the address.
+
 ## v0.7.6 — 2026-11-21
 
 ### Fixed

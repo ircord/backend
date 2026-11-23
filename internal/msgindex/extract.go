@@ -10,7 +10,8 @@ import (
 
 // Version changes restart the bounded backfill of retained history.
 // Version 4 also builds the text search index and attachment content flags.
-const Version = 4
+// Version 5 reads masked links, [text](url), as exactly their url.
+const Version = 5
 
 const (
 	KindImage = "image"

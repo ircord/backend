@@ -38,6 +38,50 @@ func TestLinksFindsLinksInMessageText(t *testing.T) {
 	}
 }
 
+func TestLinksReadMaskedLinks(t *testing.T) {
+	for _, tc := range []struct {
+		name, text string
+		want       []string
+	}{
+		{"masked link", "see [docs](https://x.test) now", []string{"https://x.test"}},
+		{"masked link at the end", "see [docs](https://x.test/a?b=1)", []string{"https://x.test/a?b=1"}},
+		{"parenthesised url", "[Go](https://en.wikipedia.org/wiki/Go_(programming_language)) is a language", []string{"https://en.wikipedia.org/wiki/Go_(programming_language)"}},
+		{"parenthesised url, bare", "https://en.wikipedia.org/wiki/Go_(programming_language) is a language", []string{"https://en.wikipedia.org/wiki/Go_(programming_language)"}},
+		{"url with an unbalanced parenthesis", "[odd](https://x.test/a_(b) end", []string{"https://x.test/a_(b)"}},
+		{"bare url followed by a parenthesis", "(see https://x.test/a) and https://y.test/b)", []string{"https://x.test/a", "https://y.test/b"}},
+		{"masked link keeps the url exactly", "[a](https://x.test/a.)", []string{"https://x.test/a."}},
+		{"two masked links", "[a](https://a.test/1) and [b](https://b.test/2)!", []string{"https://a.test/1", "https://b.test/2"}},
+		{"masked and bare in order", "https://a.test/0 [b](https://b.test/1) https://c.test/2", []string{"https://a.test/0", "https://b.test/1", "https://c.test/2"}},
+		{"the text is a url", "[https://a.test/shown](https://b.test/real)", []string{"https://b.test/real"}},
+		{"masked link in code is ignored", "`[a](https://a.test/x)` \x11[b](https://b.test/y)\x11\n```\n[c](https://c.test/z)\n```\n[d](https://d.test/w)", []string{"https://a.test/x", "https://d.test/w"}},
+		{"masked link with credentials", "[a](https://user:secret@a.test/x) [b](https://b.test/y)", []string{"https://b.test/y"}},
+		{"masked link that is not http", "[a](ftp://a.test/x) [b](javascript:alert(1))", []string{}},
+		{"masked link without a closing parenthesis", "[a](https://a.test/x and more", []string{"https://a.test/x"}},
+	} {
+		if got := linkURLs(Links(tc.text)); strings.Join(got, " ") != strings.Join(tc.want, " ") {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestMaskedLinksKeepTheBareLinkRules(t *testing.T) {
+	long := "https://a.test/" + strings.Repeat("a", MaxLinkLength)
+	if got := Links("[long](" + long + ") [ok](https://a.test/ok)"); len(got) != 1 || got[0].URL != "https://a.test/ok" {
+		t.Errorf("a too long masked link is left out: %+v", got)
+	}
+	got := Links("[docs](https://X.Test:443/Path?q=1#top)")
+	if len(got) != 1 || got[0].Identity != "https://x.test/Path?q=1" || got[0].Host != "x.test" {
+		t.Errorf("masked link identity: %+v", got)
+	}
+	var text strings.Builder
+	for i := 0; i < MaxLinksPerMessage+5; i++ {
+		text.WriteString("[l](https://a.test/" + strings.Repeat("x", i+1) + ") ")
+	}
+	if got := Links(text.String()); len(got) != MaxLinksPerMessage {
+		t.Errorf("masked links are capped: %d", len(got))
+	}
+}
+
 func TestLinksAreBounded(t *testing.T) {
 	var b strings.Builder
 	for i := range MaxLinksPerMessage + 5 {
