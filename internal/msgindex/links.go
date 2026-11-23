@@ -46,8 +46,7 @@ var candidate = regexp.MustCompile(`https?://[^\s\x00-\x1f\x7f<>"]+`)
 func Links(text string) []Link {
 	out := []Link{}
 	seen := map[string]bool{}
-	for _, raw := range candidate.FindAllString(OutsideCode(text), -1) {
-		raw = trimTrailing(raw)
+	for _, raw := range candidates(OutsideCode(text)) {
 		if len(raw) > MaxLinkLength {
 			continue
 		}

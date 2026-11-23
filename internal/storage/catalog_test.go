@@ -116,3 +116,37 @@ func TestBackfillAddsCatalogIdentitiesToOlderRows(t *testing.T) {
 		t.Fatalf("catalog after re-index: %+v", groups)
 	}
 }
+
+// A message stored with a masked link under the earlier rules keeps a wrong
+// url until the backfill runs again; rebuilding is idempotent.
+func TestBackfillRebuildsMaskedLinkRows(t *testing.T) {
+	s := catalogStore(t)
+	msg := model.Message{ID: "net:1", ConversationID: "net:#pics", SenderID: "carol", Kind: "message", Text: "see [https://a.test/shown](https://b.test/real)", CreatedAt: time.Now().UTC()}
+	if err := s.SaveHistory("alice", msg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Exec("UPDATE message_links SET url='https://a.test/shown](https://b.test/real)',identity='https://a.test/shown](https://b.test/real)',host='a.test'; INSERT INTO index_jobs(name,version,last_rowid,done,updated_ns) VALUES('message-links',4,1000000,1,0) ON CONFLICT(name) DO UPDATE SET version=4,last_rowid=1000000,done=1"); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := s.LinkIndexComplete(); done || err != nil {
+		t.Fatalf("stale index reported complete: %v %v", done, err)
+	}
+	for round := 0; round < 2; round++ {
+		if _, err := s.DB.Exec("UPDATE index_jobs SET version=4,last_rowid=0,done=0 WHERE ?=1", round); err != nil {
+			t.Fatal(err)
+		}
+		for {
+			done, err := s.BackfillLinksStep()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if done {
+				break
+			}
+		}
+		rows := catalogRowsOf(t, s, "net:1")
+		if len(rows) != 1 || rows[0].url != "https://b.test/real" || rows[0].identity != "https://b.test/real" {
+			t.Fatalf("round %d rows: %+v", round, rows)
+		}
+	}
+}

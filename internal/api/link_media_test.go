@@ -267,3 +267,35 @@ func TestMessageLinkProviderFailuresBecomeCards(t *testing.T) {
 		}
 	}
 }
+
+// A masked link, [text](url), authorizes the address it names, as typed and in
+// the canonical spelling clients request, and nothing around it.
+func TestMessageLinkPreviewsAcceptMaskedLinks(t *testing.T) {
+	downloader := clientMediaConnector(func(_ context.Context, raw string) (linkmedia.Result, error) {
+		return linkmedia.Result{URL: raw, Provider: "tiktok", ID: "123", Assets: []linkmedia.Asset{{URL: "https://media.example/movie.mp4", Kind: "video"}}}, nil
+	})
+	server, store, _ := linkMediaTestApp(t, linkmedia.ResolverOptions{Downloader: downloader})
+	alice := cookieClient()
+	a := register(t, alice, server.URL)
+	_, _ = store.Commit(a.Account.ID, "conversation.updated", model.Conversation{ID: "room", Kind: "channel"})
+	const video = "https://www.tiktok.com/@creator/video/123"
+	for id, tc := range map[string]struct {
+		text   string
+		target string
+		status int
+	}{
+		"plain":     {"[clip](" + video + ")", video, 200},
+		"same text": {"[" + video + "](" + video + ")", video, 200},
+		"adjacent":  {"[a](https://x.test/1)[clip](" + video + ")", video, 200},
+		"canonical": {"[clip](https://www.TikTok.com/@creator/video/123)", video, 200},
+		"markup":    {"[" + video + "](https://x.test/1)", video + "](https://x.test/1", 404},
+		"garbage":   {"[a](https://x.test/1)[clip](" + video + ")", "https://x.test/1)[clip](" + video, 404},
+		"unrelated": {"[clip](" + video + ")", "https://www.tiktok.com/@creator/video/999", 404},
+	} {
+		_, _ = store.Commit(a.Account.ID, "message.created", model.Message{ID: id, ConversationID: "room", Kind: "message", Text: tc.text, CreatedAt: time.Now()})
+		path := server.URL + "/api/v1/conversations/room/messages/" + id + "/link-media"
+		if raw := request(t, alice, "POST", path, map[string]any{"url": tc.target}, tc.status); tc.status == 200 && !strings.Contains(string(raw), "tiktok") {
+			t.Errorf("%s: %s", id, raw)
+		}
+	}
+}

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Links written as `[text](url)` show in the link gallery and preview under their real address.
+
 ## v0.7.6 — 2026-11-21
 
 ### Fixed

@@ -28,3 +28,19 @@ func TestSearchKindsCoverAllLinksAndExcludeCode(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchKindsReadMaskedLinks(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want int
+	}{
+		{"[https://x.test/page](https://x.test/a.png)", SearchKind("link") | SearchKind("image")},
+		{"[pic](https://x.test/page)[clip](https://x.test/a.mp4)", SearchKind("link") | SearchKind("video")},
+		{"`[pic](https://x.test/a.png)`", SearchKind("link") | SearchKind("image")},
+		{"\x11[pic](https://x.test/a.png)\x11", 0},
+	} {
+		if got := SearchKinds(model.Message{Text: tc.text}); got != tc.want {
+			t.Errorf("%q: got %d, want %d", tc.text, got, tc.want)
+		}
+	}
+}
