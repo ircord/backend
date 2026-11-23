@@ -4,7 +4,6 @@ import (
 	"net"
 	"net/url"
 	"regexp"
-	"sort"
 	"strings"
 
 	"golang.org/x/net/idna"
@@ -76,71 +75,6 @@ func Links(text string) []Link {
 		}
 	}
 	return out
-}
-
-// maskedOpen finds the start of a masked link, [text](, up to its url. The
-// text holds no brackets or line breaks.
-var maskedOpen = regexp.MustCompile(`\[[^\[\]\n]+\]\((https?://)`)
-
-// candidates lists the urls a text names, in order. A masked link,
-// [text](url), names exactly its url: the parenthesis that closes it is not
-// part of the url, and neither is its text, even when the text is a url. A url
-// that holds balanced parentheses keeps them. Every other url is a bare link
-// that ends at whitespace and loses sentence punctuation (trimTrailing).
-func candidates(text string) []string {
-	type found struct {
-		at  int
-		raw string
-	}
-	var all []found
-	rest := []byte(text)
-	skipTo := 0
-	for _, m := range maskedOpen.FindAllStringSubmatchIndex(text, -1) {
-		if m[0] < skipTo {
-			continue
-		}
-		end := maskedEnd(text, m[2])
-		if end < 0 {
-			continue
-		}
-		all = append(all, found{m[0], text[m[2]:end]})
-		// Blank the whole masked link so the bare scan does not see it again.
-		for i := m[0]; i <= end; i++ {
-			rest[i] = ' '
-		}
-		skipTo = end + 1
-	}
-	for _, m := range candidate.FindAllIndex(rest, -1) {
-		all = append(all, found{m[0], trimTrailing(string(rest[m[0]:m[1]]))})
-	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].at < all[j].at })
-	out := make([]string, len(all))
-	for i, f := range all {
-		out[i] = f.raw
-	}
-	return out
-}
-
-// maskedEnd returns where the url starting at start ends: before the ")" that
-// closes the masked link, which is the first one no "(" in the url opened.
-// It is -1 when the url runs out (whitespace, markup or the end of the text)
-// before that, so the text is not a masked link.
-func maskedEnd(text string, start int) int {
-	depth := 0
-	for i := start; i < len(text); i++ {
-		switch c := text[i]; {
-		case c <= ' ' || c == 0x7f || c == '<' || c == '>' || c == '"':
-			return -1
-		case c == '(':
-			depth++
-		case c == ')':
-			if depth == 0 {
-				return i
-			}
-			depth--
-		}
-	}
-	return -1
 }
 
 // trimTrailing drops sentence punctuation after a link ("see https://x.test.")

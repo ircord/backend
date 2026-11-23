@@ -20,8 +20,8 @@ func SearchKind(kind string) int {
 func SearchKinds(msg model.Message) int {
 	kinds := 0
 	// Unlike the display catalog, search covers links after the first twenty.
-	for _, raw := range candidate.FindAllString(OutsideCode(msg.Text), -1) {
-		link, err := url.Parse(trimTrailing(raw))
+	for _, raw := range candidates(OutsideCode(msg.Text)) {
+		link, err := url.Parse(raw)
 		if err != nil || link.Hostname() == "" {
 			continue
 		}

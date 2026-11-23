@@ -2,6 +2,7 @@ package msgindex
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -196,5 +197,121 @@ func TestLinksSkipCodeLikeTheFrontend(t *testing.T) {
 				t.Errorf("%s: indexed %q, which the timeline shows as code", tc.Name, l.URL)
 			}
 		}
+	}
+}
+
+// masked-links.json is the case list the web and desktop clients share. The
+// catalogue must list the address every client links, and a request for the
+// canonical spelling the clients use must name the address as typed.
+func TestMaskedLinksMatchTheSharedClientCases(t *testing.T) {
+	raw, err := os.ReadFile("testdata/masked-links.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Name, Input string
+		Targets     []string
+		Ordinary    *string
+	}
+	if err = json.Unmarshal(raw, &cases); err != nil || len(cases) == 0 {
+		t.Fatalf("shared cases: %v", err)
+	}
+	// Shapes the catalogue deliberately reads differently from the clients.
+	skip := map[string]string{
+		"non-canonical address": "https:host without slashes is not a link in message text",
+	}
+	for _, tc := range cases {
+		if why, ok := skip[tc.Name]; ok {
+			t.Logf("%s: skipped, %s", tc.Name, why)
+			continue
+		}
+		want := []string{}
+		for _, target := range append(tc.Targets, derefs(tc.Ordinary)...) {
+			if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+				want = append(want, target)
+			}
+		}
+		links := Links(tc.Input)
+		for _, target := range want {
+			// The catalogue never lists an address with credentials.
+			if u, err := url.Parse(target); err == nil && u.User != nil {
+				continue
+			}
+			found := false
+			for _, link := range links {
+				found = found || SameAddress(link.URL, target)
+			}
+			if !found {
+				t.Errorf("%s: catalogue %q lacks the address %q the clients link", tc.Name, linkURLs(links), target)
+			}
+		}
+		for _, link := range links {
+			if strings.Contains(link.URL, "](") {
+				t.Errorf("%s: %q holds the markup around a link", tc.Name, link.URL)
+			}
+		}
+	}
+}
+
+func derefs(s *string) []string {
+	if s == nil {
+		return nil
+	}
+	return []string{*s}
+}
+
+func TestMaskedLinkShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name, text string
+		want       []string
+	}{
+		{"a masked link inside another link's text wins", "[a [b](https://x.test/in) c](https://y.test/out)", []string{"https://x.test/in", "https://y.test/out"}},
+		{"the address ends at a space", "[a](https://x.test/a b) c", []string{"https://x.test/a"}},
+		{"adjacent masked links", "[a](https://a.test/1)[b](https://b.test/2)", []string{"https://a.test/1", "https://b.test/2"}},
+		{"a masked link inside an address", "[a](https://x.test/[b](https://y.test/z))", []string{"https://x.test/[b](https://y.test/z)"}},
+		{"brackets in the text", "[see [1]](https://x.test/a.)", []string{"https://x.test/a."}},
+		{"escaped brackets in the text", `[a \] b](https://x.test/a.)`, []string{"https://x.test/a."}},
+		{"capital scheme", "[Docs](HTTPS://X.test/up)", []string{"HTTPS://X.test/up"}},
+		{"an escaped opening bracket opens nothing", `\[x](https://x.test/a)`, []string{"https://x.test/a"}},
+	} {
+		if got := linkURLs(Links(tc.text)); strings.Join(got, " ") != strings.Join(tc.want, " ") {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestSameAddressReadsTheCanonicalSpelling(t *testing.T) {
+	for _, tc := range []struct {
+		a, b string
+		same bool
+	}{
+		{"https://x.test", "https://x.test/", true},
+		{"HTTPS://X.Test:443/a", "https://x.test/a", true},
+		{"https://bücher.test/ä?q=ö#é", "https://xn--bcher-kva.test/%C3%A4?q=%C3%B6#%C3%A9", true},
+		{"https://x.test/a b", "https://x.test/a%20b", true},
+		{"https://x.test/a", "https://x.test/b", false},
+		{"https://x.test/a", "http://x.test/a", false},
+		{"https://x.test/a?q=1", "https://x.test/a", false},
+		{"https://x.test/a#top", "https://x.test/a", false},
+		{"https://u:p@x.test/", "https://u:p@x.test/", false},
+	} {
+		if got := SameAddress(tc.a, tc.b); got != tc.same {
+			t.Errorf("SameAddress(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.same)
+		}
+	}
+}
+
+// Many opened, never closed links are the worst case for a scan that looks
+// ahead from each one; this scan makes one pass, so the input is cheap.
+func BenchmarkLinksUnclosedMaskedLinks(b *testing.B) {
+	text := strings.Repeat("[a](https://", 1400)
+	for i := 0; i < b.N; i++ {
+		Links(text)
+	}
+}
+
+func TestUnclosedMaskedLinksAreNotLinks(t *testing.T) {
+	if got := Links(strings.Repeat("[a](https://", 1400)); len(got) != 0 {
+		t.Errorf("unclosed links: %+v", got)
 	}
 }

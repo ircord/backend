@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -222,7 +221,7 @@ func (s *Server) readableLink(account, conversation, message, raw string) error 
 		if retainedOwnedLink(text, raw) {
 			return nil
 		}
-	} else if slices.Contains(linkmedia.URLs(text), raw) {
+	} else if linkmedia.Allows(text, raw) {
 		return nil
 	}
 	return irc.ErrNotFound
@@ -533,21 +532,8 @@ func (s *Server) ownedLinkMedia(ctx context.Context, raw string) (LinkMediaRespo
 	return out, true
 }
 
-var retainedOwnedURL = regexp.MustCompile(`https?://[^\s<>"'\x00-\x1f]+`)
-
 func retainedOwnedLink(text, raw string) bool {
-	for _, candidate := range retainedOwnedURL.FindAllString(text, -1) {
-		candidate = strings.TrimRight(candidate, ".,!?;:")
-		for _, pair := range [][2]string{{"(", ")"}, {"[", "]"}, {"{", "}"}} {
-			for strings.HasSuffix(candidate, pair[1]) && strings.Count(candidate, pair[1]) > strings.Count(candidate, pair[0]) {
-				candidate = strings.TrimSuffix(candidate, pair[1])
-			}
-		}
-		if candidate == raw {
-			return true
-		}
-	}
-	return false
+	return linkmedia.Names(text, raw)
 }
 
 // Match the message renderer's closed, line-start fences and IRC monospace
