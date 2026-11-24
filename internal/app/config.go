@@ -31,6 +31,7 @@ type config struct {
 	pushSubject     string
 	webPush         bool
 	uploads         uploadLimits
+	fileHost        fileHostPolicy
 }
 
 // uploadLimits is the operator's policy for stored uploads.
@@ -141,6 +142,12 @@ func loadConfig() (config, error) {
 	}
 	if c.uploads, err = uploadPolicy(os.Getenv); err != nil {
 		return config{}, err
+	}
+	if c.fileHost, err = parseFileHostPolicy(os.Getenv); err != nil {
+		return config{}, err
+	}
+	if c.fileHost.serve && c.blob == nil {
+		return config{}, fmt.Errorf("IRCORD_FILEHOST_SERVE needs IRCORD_FILE_STORAGE to be local or s3")
 	}
 	c.pushSubject = os.Getenv("IRCORD_PUSH_SUBJECT")
 	if c.pushSubject == "" && publicURL.Scheme == "https" {

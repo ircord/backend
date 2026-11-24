@@ -115,7 +115,7 @@ func (s *Service) markUsed(owner, id string) error {
 // A match in messages, the outbox or parties is recorded as a use that never
 // ends. A match in the owner's profile or settings keeps the file until
 // recheck, and the sweep after that looks again.
-func (s *Service) hideUnused(ctx context.Context, owner, id string, recheck time.Time) (hidden bool, err error) {
+func (s *Service) hideUnused(ctx context.Context, owner, id, needle string, recheck time.Time) (hidden bool, err error) {
 	conn, err := s.options.Store.DB.Conn(ctx)
 	if err != nil {
 		return false, err
@@ -130,7 +130,6 @@ func (s *Service) hideUnused(ctx context.Context, owner, id string, recheck time
 			hidden = false
 		}
 	}()
-	needle := "/files/" + id + "/"
 	checks := []struct {
 		query   string
 		args    []any
@@ -173,7 +172,8 @@ func (s *Service) hideUnused(ctx context.Context, owner, id string, recheck time
 // SweepUnused removes uploads, including avatars, that no message or profile
 // uses and that are older than grace. A profile's use is checked again after
 // grace, so a replaced banner or avatar is removed within about twice that.
-// Upstream files cannot be removed. A file that fails to delete stays hidden
+// A file on a network's file host is removed there, when its host is trusted
+// to delete; otherwise it stays. A file that fails to delete stays hidden
 // and is retried by the next sweep; it never stops the others. It reports how
 // many files it removed.
 func (s *Service) SweepUnused(ctx context.Context, grace time.Duration) (int, error) {
@@ -188,6 +188,9 @@ func (s *Service) SweepUnused(ctx context.Context, grace time.Duration) (int, er
 	}
 	if s.options.AvatarBlob != nil {
 		backends = append(backends, "avatar")
+	}
+	if s.anyListed() {
+		backends = append(backends, "upstream")
 	}
 	if len(backends) == 0 {
 		return 0, nil
@@ -229,12 +232,26 @@ func (s *Service) SweepUnused(ctx context.Context, grace time.Duration) (int, er
 			return removed, err
 		}
 		blob := s.blob(v.backend)
+		upstream := v.backend == "upstream"
+		needle := "/files/" + v.id + "/"
+		if upstream {
+			_, raw, err := s.upstreamTarget(ctx, v.id)
+			if err != nil {
+				failed = append(failed, fmt.Errorf("check file %s: %w", v.id, err))
+				continue
+			}
+			if !v.deleted && !s.deletableUpstream(raw) {
+				// Its host cannot be asked to delete it; leave it visible and untouched.
+				continue
+			}
+			needle = upstreamNeedle(raw, needle)
+		}
 		if !v.deleted {
-			if blob == nil {
+			if blob == nil && !upstream {
 				// Its storage is not configured now; leave it visible and untouched.
 				continue
 			}
-			hidden, err := s.hideUnused(ctx, v.owner, v.id, now.Add(grace))
+			hidden, err := s.hideUnused(ctx, v.owner, v.id, needle, now.Add(grace))
 			if err != nil {
 				failed = append(failed, fmt.Errorf("check file %s: %w", v.id, err))
 				continue
@@ -242,6 +259,20 @@ func (s *Service) SweepUnused(ctx context.Context, grace time.Duration) (int, er
 			if !hidden {
 				continue
 			}
+		}
+		if upstream {
+			// A host that refuses, or is no longer trusted, keeps the file; only a
+			// host that may answer later is tried again by the next sweep.
+			if _, err = s.removeUpstream(ctx, s.creds(), v.owner, v.id); err != nil {
+				failed = append(failed, fmt.Errorf("delete file %s: %w", v.id, err))
+				continue
+			}
+			if _, err = s.options.Store.DB.ExecContext(ctx, "DELETE FROM files WHERE id=? AND deleted=1", v.id); err != nil {
+				failed = append(failed, fmt.Errorf("forget file %s: %w", v.id, err))
+				continue
+			}
+			removed++
+			continue
 		}
 		if blob == nil {
 			slog.Warn("Removing an unused upload is waiting for file storage that is not configured", "file", v.id, "storage", v.backend, "object", v.key)

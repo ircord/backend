@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ircord/backend/internal/model"
@@ -76,9 +77,18 @@ type Service struct {
 	options Options
 	// quota serializes the final quota check with the insert it allows.
 	quota sync.Mutex
+	// credentials finds the IRC login a network's file host accepts, for deleting
+	// files on it. It is set once at startup.
+	credentials atomic.Pointer[Credentials]
 }
 
 var ErrNotFound = errors.New("upload not found")
+
+// ErrType reports a file whose content is not an accepted type.
+var ErrType = errors.New("unsupported file type")
+
+// ErrSize reports an empty file or one over the upload limit.
+var ErrSize = errors.New("file exceeds the upload limit or is empty")
 
 func New(options Options) (*Service, error) {
 	if options.MaxBytes <= 0 {
@@ -144,30 +154,42 @@ func (s *Service) Resolve(ctx context.Context, host, advertised, user, password 
 			return local
 		}
 	}
+	status, types, err := s.discover(ctx, u)
+	if err != nil {
+		local.Reason = "The upstream filehost is unavailable."
+		return local
+	}
+	if status < 200 || status >= 300 {
+		local.Reason = "The upstream filehost does not support discovery."
+		return local
+	}
+	return s.upstream(u, types, user, password)
+}
+
+// discover asks a file host what it accepts. It sends no credential.
+func (s *Service) discover(ctx context.Context, u *url.URL) (status int, types []string, err error) {
 	probe, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(probe, "OPTIONS", u.String(), nil)
 	res, err := s.options.Client.Do(req)
 	if err != nil {
-		local.Reason = "The upstream filehost is unavailable."
-		return local
+		return 0, nil, err
 	}
 	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		local.Reason = "The upstream filehost does not support discovery."
-		return local
-	}
-	types := []string{}
 	for _, t := range strings.Split(res.Header.Get("Accept-Post"), ",") {
 		t = strings.TrimSpace(t)
 		if t != "" {
 			types = append(types, t)
 		}
 	}
+	return res.StatusCode, types, nil
+}
+
+func (s *Service) upstream(u *url.URL, types []string, user, password string) Provider {
 	if len(types) == 0 {
 		types = s.options.Types
 	}
-	return Provider{Provider: "upstream", Available: true, MaxBytes: s.options.MaxBytes, Types: types, URL: u.String(), User: user, Password: password}
+	return Provider{CanDelete: s.listed(u.Hostname()), Provider: "upstream", Available: true, MaxBytes: s.options.MaxBytes, Types: types, URL: u.String(), User: user, Password: password}
 }
 func accepted(types []string, contentType string) bool {
 	for _, t := range types {
@@ -182,7 +204,7 @@ func (s *Service) Upload(ctx context.Context, owner, network, name string, data 
 		return Upload{}, fmt.Errorf("%s", provider.Reason)
 	}
 	if len(data) == 0 || int64(len(data)) > provider.MaxBytes {
-		return Upload{}, fmt.Errorf("file exceeds the upload limit or is empty")
+		return Upload{}, ErrSize
 	}
 	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
 	if name == "." || len(name) > 200 || strings.ContainsAny(name, "\r\n\x00") {
@@ -190,7 +212,7 @@ func (s *Service) Upload(ctx context.Context, owner, network, name string, data 
 	}
 	contentType := strings.Split(http.DetectContentType(data), ";")[0]
 	if !accepted(provider.Types, contentType) {
-		return Upload{}, fmt.Errorf("unsupported file type")
+		return Upload{}, ErrType
 	}
 	quota := provider.Provider != "upstream" && provider.Provider != "avatar"
 	if quota {
@@ -226,7 +248,7 @@ func (s *Service) Upload(ctx context.Context, owner, network, name string, data 
 		}
 		defer res.Body.Close()
 		if res.StatusCode != 201 {
-			return Upload{}, fmt.Errorf("upstream upload was rejected (%d)", res.StatusCode)
+			return Upload{}, refusal(res)
 		}
 		location, err := url.Parse(res.Header.Get("Location"))
 		if err != nil || res.Header.Get("Location") == "" {
@@ -327,7 +349,14 @@ func (s *Service) Delete(ctx context.Context, owner, id string) error {
 		return err
 	}
 	if r.Backend == "upstream" {
-		return fmt.Errorf("upstream filehost does not advertise a deletion protocol")
+		if !s.deletableUpstream(r.URL) {
+			return fmt.Errorf("upstream filehost does not advertise a deletion protocol")
+		}
+		if err = s.deleteRemote(ctx, s.creds(), owner, r.NetworkID, r.URL); err != nil {
+			return err
+		}
+		_, err = s.options.Store.DB.Exec("DELETE FROM files WHERE owner=? AND id=?", owner, id)
+		return err
 	}
 	if s.blob(r.Backend) == nil {
 		return fmt.Errorf("original file storage is unavailable")
@@ -339,6 +368,13 @@ func (s *Service) Delete(ctx context.Context, owner, id string) error {
 	return err
 }
 func (s *Service) DeleteAccount(ctx context.Context, owner string) error {
+	return s.DeleteAccountUsing(ctx, owner, s.creds())
+}
+
+// DeleteAccountUsing deletes the owner's files, using creds to find the logins
+// that delete files on a network's file host. A caller that is about to forget
+// the owner's networks reads them first.
+func (s *Service) DeleteAccountUsing(ctx context.Context, owner string, creds Credentials) error {
 	rows, err := s.options.Store.DB.Query("SELECT id,backend FROM files WHERE owner=?", owner)
 	if err != nil {
 		return err
@@ -362,6 +398,15 @@ func (s *Service) DeleteAccount(ctx context.Context, owner string) error {
 	var failed []error
 	for _, v := range items {
 		if v.backend == "upstream" {
+			// A file on a host that is not trusted to delete stays where it is.
+			// One the host refuses to delete is forgotten, since retrying cannot help.
+			if _, err = s.removeUpstream(ctx, creds, owner, v.id); err != nil {
+				failed = append(failed, err)
+				continue
+			}
+			if _, err = s.options.Store.DB.ExecContext(ctx, "DELETE FROM files WHERE owner=? AND id=?", owner, v.id); err != nil {
+				failed = append(failed, err)
+			}
 			continue
 		}
 		if s.blob(v.backend) == nil {
@@ -405,12 +450,12 @@ func (s *Service) AvatarProvider() Provider {
 }
 
 // DeletableUpload returns the id of the owner's stored upload served at value,
-// or "" when Delete would refuse it (another owner, an upstream filehost, or a
-// storage backend that is no longer configured).
+// or "" when Delete would refuse it (another owner, an upstream filehost that
+// is not trusted to delete, or a storage backend that is no longer configured).
 func (s *Service) DeletableUpload(owner, value string) string {
 	var id, backend string
 	err := s.options.Store.DB.QueryRow("SELECT f.id,f.backend FROM file_metadata m JOIN files f ON f.id=m.id WHERE f.owner=? AND f.deleted=0 AND json_extract(m.payload,'$.url')=? LIMIT 1", owner, value).Scan(&id, &backend)
-	if err != nil || backend == "upstream" || s.blob(backend) == nil {
+	if err != nil || backend == "upstream" && !s.deletableUpstream(value) || backend != "upstream" && s.blob(backend) == nil {
 		return ""
 	}
 	return id

@@ -694,6 +694,10 @@ func (s *Service) Close() {
 	}
 }
 
+// ClientIP is the address of the request's client, with the same trust in
+// proxies that limits sign-in attempts.
+func (s *Service) ClientIP(r *http.Request) string { return s.clientIP(r) }
+
 func (s *Service) clientIP(r *http.Request) string {
 	ip, _ := s.resolvedClientIP(r)
 	return ip

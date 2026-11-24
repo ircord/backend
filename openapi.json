@@ -30591,6 +30591,19 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Set to message to see where a file attached to a message goes. That can be the network's own file host, with its limits.",
+            "explode": false,
+            "in": "query",
+            "name": "use",
+            "schema": {
+              "description": "Set to message to see where a file attached to a message goes. That can be the network's own file host, with its limits.",
+              "enum": [
+                "message"
+              ],
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -35642,13 +35655,24 @@
     },
     "/api/v1/uploads": {
       "post": {
-        "description": "Requires the session cookie. Optional networkId selects and scopes the filehost. Files are bounded and MIME-sniffed by the streaming handler.",
+        "description": "Requires the session cookie. Optional networkId selects and scopes the filehost. Files are bounded and MIME-sniffed by the streaming handler. Set use=message for a file that will be attached to a message: when the server prefers the network's file host and the network advertises one the operator trusts, the file is stored there, and the refusal text of that host, such as its quota message, is returned. Without use=message, and for profile pictures and theme backgrounds, the file stays on this server.",
         "operationId": "upload-file",
         "parameters": [
           {
             "in": "query",
             "name": "networkId",
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "message marks a file that will be attached to a message.",
+            "in": "query",
+            "name": "use",
+            "schema": {
+              "enum": [
+                "message"
+              ],
               "type": "string"
             }
           }
@@ -35955,7 +35979,356 @@
         ]
       }
     },
+    "/files/": {
+      "options": {
+        "description": "The IRC network's file host (draft/FILEHOST). Answers without a login. Accept-Post lists the accepted types. Only a server set up as the IRC network's file host answers this; others reply 404.",
+        "operationId": "filehost-options",
+        "responses": {
+          "204": {
+            "description": "Accept-Post names the accepted media types."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "501": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          }
+        },
+        "summary": "Describe the network file host",
+        "tags": [
+          "Files"
+        ]
+      },
+      "post": {
+        "description": "The body is the file. Authorization is HTTP Basic with the IRC account name and password, which the associated IRC server checks. The file belongs to this server's account of the same name and counts against its upload quota. Content-Disposition names the file. 201 returns the file's address in Location. 401 is a wrong login, 403 an account that may not upload here, 413 a file that is too large or over quota (the body says which), 415 a type this server does not accept, and 429 too many wrong logins or too many uploads at once. Only a server set up as the IRC network's file host answers this; others reply 404.",
+        "operationId": "filehost-upload",
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "contentMediaType": "application/octet-stream",
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Stored. Location is the file's address."
+          },
+          "400": {
+            "description": "No file, or an invalid file name."
+          },
+          "401": {
+            "description": "Missing or wrong IRC login."
+          },
+          "403": {
+            "description": "The account may not upload here."
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "413": {
+            "description": "File too large, or the upload quota is reached."
+          },
+          "415": {
+            "description": "File type not accepted."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "429": {
+            "description": "Too many wrong logins, or too many uploads at once."
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "501": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "503": {
+            "description": "Logins or storage are unavailable."
+          }
+        },
+        "summary": "Upload a file to the network file host",
+        "tags": [
+          "Files"
+        ]
+      }
+    },
     "/files/{id}/{token}/{filename}": {
+      "delete": {
+        "description": "An IRCord addition to the standard. Authorization is HTTP Basic with the IRC login of the account that uploaded the file. 204 when deleted, 404 when no such file belongs to that account. Only a server set up as the IRC network's file host answers this; others reply 404.",
+        "operationId": "filehost-delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "401": {
+            "description": "Missing or wrong IRC login."
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "404": {
+            "description": "No such file for this account."
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "429": {
+            "description": "Too many wrong logins."
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "501": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request failed; see the problem detail."
+          }
+        },
+        "summary": "Delete a file from the network file host",
+        "tags": [
+          "Files"
+        ]
+      },
       "get": {
         "description": "The token and original storage are checked on every request, including cached image variants. Anyone with a valid file URL can download it, including party attachments after leaving the party. Optional w and h contain a supported still image inside the requested box without upscaling. Dimensions must be integers from 1 to 2048. Images over 16 MiB or 16 million pixels, animated images, unsupported formats, and images with orientation or color-profile metadata retain their original bytes. Busy image processing also serves the original. Responses are not stored by browsers or shared caches. Byte ranges and HEAD describe the selected representation. Omit w and h to download the original.",
         "operationId": "get-uploaded-file",

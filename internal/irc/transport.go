@@ -15,7 +15,16 @@ var errPrivateDestination = errors.New("private IRC destinations are disabled")
 var errWebIRCPrivateOnly = errors.New("plaintext WEBIRC requires a private IRC destination")
 
 func HTTPClient(allowPrivate bool) *http.Client {
-	return &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+	return HTTPClientTimeout(allowPrivate, 30*time.Second)
+}
+
+// UploadTimeout bounds a file passed on to another server. A file of the
+// largest size needs longer than ordinary requests, over a slow line.
+const UploadTimeout = 5 * time.Minute
+
+// HTTPClientTimeout is HTTPClient with its own limit for a whole request.
+func HTTPClientTimeout(allowPrivate bool, timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 		return (safeDialer{ctx: ctx, allowPrivate: allowPrivate}).Dial(network, address)
 	}, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second, MaxIdleConns: 100, MaxIdleConnsPerHost: 4}}
 }

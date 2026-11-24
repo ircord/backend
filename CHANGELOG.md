@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### New
+
+- Servers can keep the files people post on the IRC network's own file host.
+
 ## v0.7.8 — 2026-11-24
 
 ### Fixed
