@@ -18,6 +18,7 @@ type Member struct {
 	Color                string     `json:"color"`
 	NameColor            string     `json:"nameColor,omitempty"`
 	AvatarURL            string     `json:"avatarUrl,omitempty"`
+	AvatarSrc            string     `json:"avatarSrc,omitempty" doc:"Where clients draw the avatar: avatarUrl when it is on this server, otherwise a cached copy on this server. Absent when there is no picture to show."`
 	Status               string     `json:"status" enum:"online,away,offline"`
 	AwayMessage          string     `json:"awayMessage,omitempty" doc:"The AWAY text while away, when known."`
 	Role                 string     `json:"role" enum:"member,operator,bot" doc:"bot while the network reports the person's bot user mode (+B), from WHO flags, WHOIS or the IRCv3 bot tag."`
@@ -29,7 +30,9 @@ type Member struct {
 	StatusExpiresAt      *time.Time `json:"statusExpiresAt,omitempty"`
 	Headline             string     `json:"headline,omitempty"`
 	BannerURL            string     `json:"bannerUrl,omitempty"`
+	BannerSrc            string     `json:"bannerSrc,omitempty" doc:"Where clients draw the banner, chosen like avatarSrc."`
 	ProfileBackgroundURL string     `json:"profileBackgroundUrl,omitempty"`
+	ProfileBackgroundSrc string     `json:"profileBackgroundSrc,omitempty" doc:"Where clients draw the profile background, chosen like avatarSrc."`
 	ProfileAccentColor   string     `json:"profileAccentColor,omitempty"`
 	AvatarFrame          string     `json:"avatarFrame,omitempty"`
 	Location             string     `json:"location,omitempty"`

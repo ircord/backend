@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Profile pictures from people on other IRCord servers now show instead of their initial.
+
 ## v0.7.7 — 2026-11-23
 
 ### Fixed

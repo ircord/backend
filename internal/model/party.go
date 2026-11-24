@@ -19,6 +19,7 @@ type PartyCandidate struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"displayName"`
 	AvatarURL   string `json:"avatarUrl,omitempty"`
+	AvatarSrc   string `json:"avatarSrc,omitempty" doc:"Where clients draw the avatar: avatarUrl when it is on this server, otherwise a cached copy on this server."`
 }
 
 func (p PartyCandidate) PrincipalID() string {

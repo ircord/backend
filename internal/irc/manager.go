@@ -15,6 +15,7 @@ import (
 	"ircord/backend/internal/activity"
 	ergoapi "ircord/backend/internal/ergo"
 	"ircord/backend/internal/filehost"
+	"ircord/backend/internal/model"
 	"ircord/backend/internal/push"
 	"ircord/backend/internal/storage"
 )
@@ -33,6 +34,8 @@ type Options struct {
 	MaxConnections          int
 	ConnectTimeout          time.Duration
 	Store                   *storage.Store
+	// Pictures sets how clients draw profile pictures; nil leaves them undrawn.
+	Pictures model.PictureSource
 	// Home is the IRCord network (ID, host and port) where channels the user creates are
 	// registered to their account.
 	Home NetworkConfig

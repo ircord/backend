@@ -156,6 +156,16 @@ func gifStill(img Image) (Image, error) {
 	return Image{Data: out.Bytes(), ContentType: "image/png", Width: img.Width, Height: img.Height}, nil
 }
 
+// GIFStill reduces a GIF of the given dimensions to a PNG of its first frame.
+// It reads only that frame, so a many-frame GIF cannot expand in memory.
+func GIFStill(data []byte, width, height int) ([]byte, error) {
+	still, err := gifStill(Image{Data: data, ContentType: "image/gif", Width: width, Height: height})
+	if err != nil {
+		return nil, err
+	}
+	return still.Data, nil
+}
+
 func extension(mime string) string {
 	switch mime {
 	case "image/png":

@@ -35,7 +35,7 @@ func (w *workspace) emit(kind string, data any) {
 	}
 	if member, ok := data.(Member); ok {
 		member.Ignored = member.ID != w.self.ID && w.policy.Ignored(member.Nick, member.Username, member.Host)
-		data = member
+		data = w.withPictures(member)
 	}
 	var e Event
 	if w.store != nil {

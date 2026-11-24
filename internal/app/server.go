@@ -23,6 +23,7 @@ import (
 	"ircord/backend/internal/irc"
 	"ircord/backend/internal/model"
 	"ircord/backend/internal/push"
+	"ircord/backend/internal/remotemedia"
 	"ircord/backend/internal/storage"
 )
 
@@ -79,6 +80,12 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Profile pictures on other servers are cached here and drawn from this server's own address.
+	remote, err := remotemedia.New(remotemedia.Options{DB: store.DB, Dir: filepath.Join(dataDir, "remote-media"), Key: store.DeriveKey("remote-media/v1"), PublicURL: publicURL.String()})
+	if err != nil {
+		return err
+	}
+	ircOptions.Pictures = remote.Src
 	var pushes *push.Service
 	if cfg.pushSubject != "" && cfg.webPush {
 		pushes, err = push.New(push.Options{Store: store, DataDir: dataDir, Subject: cfg.pushSubject})
@@ -223,7 +230,7 @@ func Run(ctx context.Context) error {
 			}
 		}
 	}()
-	app := api.New(manager, api.Options{Media: cfg.media, Store: store, Files: files, Emotes: catalog, DisableCustomCSS: !cfg.customCSS, Push: pushes, Activity: router, Auth: sessions, Origins: cfg.origins, Admin: verifier, Build: buildinfo.Current(), Ergo: associated, PublicURL: publicURL.String()})
+	app := api.New(manager, api.Options{Media: cfg.media, Store: store, Files: files, Emotes: catalog, RemoteMedia: remote, DisableCustomCSS: !cfg.customCSS, Push: pushes, Activity: router, Auth: sessions, Origins: cfg.origins, Admin: verifier, Build: buildinfo.Current(), Ergo: associated, PublicURL: publicURL.String()})
 	server := &http.Server{Addr: cfg.listen, Handler: app.Handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 90 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32768}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()

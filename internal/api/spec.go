@@ -172,7 +172,7 @@ func (s *Server) finalizeSpec() {
 			operation.Tags = []string{apiTag(path)}
 			if admin.IsPath(path) {
 				operation.Security = []map[string][]string{{"adminBearer": {}}}
-			} else if !publicAppRead(operation.Method, path) && !strings.HasPrefix(path, "/files/") && path != "/api/v1/auth/signup" && path != "/api/v1/auth/login" && path != "/api/v1/auth/session" && path != "/api/v1/auth/username" && path != "/api/v1/auth/registration" {
+			} else if !publicAppRead(operation.Method, path) && !strings.HasPrefix(path, "/files/") && !strings.HasPrefix(path, "/media/remote/") && path != "/api/v1/auth/signup" && path != "/api/v1/auth/login" && path != "/api/v1/auth/session" && path != "/api/v1/auth/username" && path != "/api/v1/auth/registration" {
 				operation.Security = []map[string][]string{{"sessionCookie": {}}}
 			}
 			if strings.HasPrefix(path, "/api/v1/app/") {
@@ -200,7 +200,7 @@ func apiTag(path string) string {
 	if strings.Contains(path, "/emotes") {
 		return "Emotes"
 	}
-	if strings.Contains(path, "/uploads") || strings.HasPrefix(path, "/files/") {
+	if strings.Contains(path, "/uploads") || strings.HasPrefix(path, "/files/") || strings.HasPrefix(path, "/media/remote/") {
 		return "Files"
 	}
 	if strings.Contains(path, "/notifications") || strings.Contains(path, "/push") {

@@ -191,7 +191,7 @@ func (s *Server) registerModeration() {
 		if mark.Nick != "" {
 			s.auditBotMark(principal(ctx), mark, in.Body.Bot, err)
 		}
-		return result(mark.Member, err)
+		return s.memberResult(mark.Member, err)
 	})
 	huma.Register(s.API, huma.Operation{OperationID: "recent-messages-deletion", Method: "GET", Path: "/api/v1/recent-messages-deletions/{jobId}", Summary: "Progress of a recent-messages deletion"}, func(ctx context.Context, in *struct {
 		JobID string `path:"jobId"`

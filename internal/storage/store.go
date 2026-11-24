@@ -3,7 +3,9 @@ package storage
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -21,7 +23,16 @@ type Store struct {
 	DB     *sql.DB
 	read   *sql.DB // read-only connections; see Open
 	cipher cipher.AEAD
+	master []byte
 	lock   *flock.Flock
+}
+
+// DeriveKey returns a key bound to purpose, derived from the instance key so
+// that no purpose can reuse another's key and the instance key itself stays unexposed.
+func (s *Store) DeriveKey(purpose string) []byte {
+	mac := hmac.New(sha256.New, s.master)
+	mac.Write([]byte("ircord/derive/v1\x00" + purpose))
+	return mac.Sum(nil)
 }
 
 func Open(dir string) (*Store, error) {
@@ -80,7 +91,7 @@ func Open(dir string) (*Store, error) {
 	// its entity mutation; most readers use the same handle without retrying
 	// partial state. Long reads use the read-only handle below.
 	db.SetMaxOpenConns(1)
-	s := &Store{DB: db, cipher: aead, lock: lock}
+	s := &Store{DB: db, cipher: aead, master: key, lock: lock}
 	if err = s.migrate(dir); err != nil {
 		s.Close()
 		return nil, err

@@ -10,7 +10,13 @@ import (
 
 func (s *Server) registerPeople() {
 	huma.Register(s.API, huma.Operation{OperationID: "people-lookup", Method: http.MethodGet, Path: "/api/v1/people", Summary: "Find people for a network and purpose", Description: "Returns bounded, purpose-eligible people from the signed-in workspace. Services and party lookup can include names from the associated server's registered account directory. Known people are not a server-wide online roster. Nicknames, services accounts, and local account IDs are distinct."}, func(ctx context.Context, in *model.PeopleQuery) (*Output[model.PeoplePage], error) {
-		return result(s.Manager.LookupPeople(ctx, owner(ctx), *in))
+		page, err := s.Manager.LookupPeople(ctx, owner(ctx), *in)
+		items := make([]model.Person, len(page.Items)) // the page may share a cache's slice
+		for i, person := range page.Items {
+			items[i] = person.WithPictures(s.pictures())
+		}
+		page.Items = items
+		return result(page, err)
 	})
 	huma.Register(s.API, huma.Operation{OperationID: "whois", Method: http.MethodGet, Path: "/api/v1/networks/{id}/whois", Summary: "Look someone up with WHOIS", Description: "Runs one WHOIS on the network for a profile: user and host, real name, server, channels, idle and sign-on time, account, TLS, operator status and away message. The person is not notified. Waits up to 10 seconds."}, func(ctx context.Context, in *struct {
 		ID   string `path:"id" maxLength:"100"`
