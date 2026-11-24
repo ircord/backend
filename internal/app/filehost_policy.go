@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"strings"
+
+	"ircord/backend/internal/auth"
 )
 
 // Message uploads from this server can go to the IRC network's own file host
@@ -37,6 +39,9 @@ func parseFileHostPolicy(get func(string) string) (fileHostPolicy, error) {
 	}
 	for _, name := range strings.Split(get("IRCORD_FILEHOST_ACCOUNTS"), ",") {
 		if name = strings.TrimSpace(name); name != "" {
+			if problem := auth.UsernameProblem(name); problem != "" {
+				return fileHostPolicy{}, fmt.Errorf("IRCORD_FILEHOST_ACCOUNTS names %q, which cannot be an account: %s", name, problem)
+			}
 			p.accounts = append(p.accounts, name)
 		}
 	}

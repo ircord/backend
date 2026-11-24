@@ -27,7 +27,7 @@ func TestFileHostPolicySettings(t *testing.T) {
 	if err != nil || !p.serve || !slices.Equal(p.accounts, []string{"alice", "bob"}) || p.messageUploads != "network" {
 		t.Fatalf("%+v %v", p, err)
 	}
-	for name, value := range map[string]string{"IRCORD_FILEHOST_SERVE": "yes", "IRCORD_MESSAGE_UPLOADS": "remote"} {
+	for name, value := range map[string]string{"IRCORD_FILEHOST_SERVE": "yes", "IRCORD_MESSAGE_UPLOADS": "remote", "IRCORD_FILEHOST_ACCOUNTS": "alice,two words"} {
 		if _, err = parseFileHostPolicy(policyEnv(map[string]string{name: value})); err == nil {
 			t.Fatalf("%s=%s accepted", name, value)
 		}
@@ -38,12 +38,15 @@ func TestFileHostPolicySettings(t *testing.T) {
 // same person when accounts are linked to the IRC server.
 func TestFileHostNeedsLinkedAccounts(t *testing.T) {
 	for name, settings := range map[string]map[string]string{
+		"file storage disabled":           {"IRCORD_FILEHOST_SERVE": "true", "IRCORD_FILE_STORAGE": "disabled"},
 		"without Ergo":                    {"IRCORD_FILEHOST_SERVE": "true"},
 		"with Ergo accounts switched off": {"IRCORD_FILEHOST_SERVE": "true", "IRCORD_ERGO_ACCOUNTS": "false", "IRCORD_ERGO_SERVER": "irc.example.com:6697", "IRCORD_ERGO_API_URL": "https://127.0.0.1:1", "IRCORD_ERGO_API_TOKEN": strings.Repeat("ab", 32)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			cleanEnvironment(t)
 			t.Setenv("IRCORD_DATA_DIR", filepath.Join(t.TempDir(), "state"))
+			// If the guard ever regressed, Run must not open the default port.
+			t.Setenv("IRCORD_LISTEN", "127.0.0.1:0")
 			for k, v := range settings {
 				t.Setenv(k, v)
 			}

@@ -192,8 +192,10 @@ func Run(ctx context.Context) error {
 			return err
 		}
 		router.Forget(owner)
-		// Each file on a network's file host is a request of its own.
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		// Each file on a network's file host is a request of its own. The person is waiting,
+		// so this does what it can in a minute; the hourly cleanup of deleted accounts
+		// retries the rest with the logins kept above.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		if err := files.DeleteAccountUsing(ctx, owner, logins); err != nil {
 			return err

@@ -144,11 +144,15 @@ func TestNetworkFileHostDescribesItself(t *testing.T) {
 
 func TestNetworkFileHostIsOffUnlessServed(t *testing.T) {
 	h := newNetworkHost(t, false, nil, nil)
-	if res := h.do(t, "OPTIONS", h.files_(), "", "", nil, nil); res.StatusCode < 400 {
-		t.Fatalf("discovery answered while switched off: %d", res.StatusCode)
+	if res := h.do(t, "OPTIONS", h.files_(), "", "", nil, nil); res.StatusCode != 404 {
+		t.Fatalf("discovery while switched off: %d", res.StatusCode)
 	}
-	if res := h.post(t, "alice", "alice-secret", pngBytes(t, 2, 2)); res.StatusCode < 400 {
-		t.Fatalf("upload accepted while switched off: %d", res.StatusCode)
+	if res := h.post(t, "alice", "alice-secret", pngBytes(t, 2, 2)); res.StatusCode != 404 {
+		t.Fatalf("upload while switched off: %d", res.StatusCode)
+	}
+	// The download route has the same address, so a deletion is a wrong method, not a missing page.
+	if res := h.do(t, "DELETE", h.files_()+"id/token/pixel.png", "alice", "alice-secret", nil, nil); res.StatusCode != 405 {
+		t.Fatalf("deletion while switched off: %d", res.StatusCode)
 	}
 }
 
@@ -258,9 +262,18 @@ func TestNetworkFileHostLimitsWrongLogins(t *testing.T) {
 	if res := h.post(t, "alice", "alice-secret", data); res.StatusCode != 429 || h.checks != checks {
 		t.Fatalf("after the limit: %d, %d checks", res.StatusCode, h.checks-checks)
 	}
-	// Another account from the same address is not locked out by one account's failures.
+	// Another account from the same address is not locked out by one account's failures,
+	// however long the first keeps trying: its refused attempts do not use up the address.
+	for i := 0; i < 3*fileHostAddressFailures; i++ {
+		if res := h.post(t, "alice", "wrong", data); res.StatusCode != 429 {
+			t.Fatalf("refused attempt %d: %d", i, res.StatusCode)
+		}
+	}
 	if res := h.post(t, "bob", "bob-secret", data); res.StatusCode != 201 {
 		t.Fatalf("other account: %d", res.StatusCode)
+	}
+	if res := h.do(t, "DELETE", h.post(t, "bob", "bob-secret", data).Header.Get("Location"), "bob", "bob-secret", nil, nil); res.StatusCode != 204 {
+		t.Fatalf("other account's delete: %d", res.StatusCode)
 	}
 }
 

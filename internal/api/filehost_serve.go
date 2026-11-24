@@ -60,6 +60,12 @@ func (l *loginFailures) begin(address, account string) bool {
 	if l.counts == nil {
 		l.counts = map[string]failure{}
 	}
+	// An account that has used up its attempts is refused without touching the
+	// address budget, so one account with a wrong password cannot lock out the
+	// others behind the same address, such as every user of a relaying server.
+	if f, ok := l.counts["pair "+address+" "+account]; ok && !now.After(f.until) && f.count >= fileHostPairFailures {
+		return false
+	}
 	within := true
 	for key, max := range map[string]int{"address " + address: fileHostAddressFailures, "pair " + address + " " + account: fileHostPairFailures} {
 		if _, tracked := l.counts[key]; !tracked && len(l.counts) >= fileHostTrackedFailures {
@@ -179,9 +185,9 @@ func (s *Server) registerFileHost(router chi.Router) {
 	// up as the network's file host answers it.
 	const only = " Only a server set up as the IRC network's file host answers this; others reply 404."
 	api := s.API.OpenAPI()
-	api.AddOperation(&huma.Operation{OperationID: "filehost-options", Method: "OPTIONS", Path: "/files/", Summary: "Describe the network file host", Description: "The IRC network's file host (draft/FILEHOST). Answers without a login. Accept-Post lists the accepted types." + only, Responses: map[string]*huma.Response{"204": {Description: "Accept-Post names the accepted media types."}}})
+	api.AddOperation(&huma.Operation{OperationID: "filehost-options", Method: "OPTIONS", Path: "/files/", Summary: "Describe the network file host", Description: "The IRC network's file host (draft/FILEHOST). Answers without a login. Accept-Post lists the accepted types. Allow lists DELETE: senders read it to learn that this host deletes files on request, which the standard has no word for." + only, Responses: map[string]*huma.Response{"204": {Description: "Accept-Post names the accepted media types."}}})
 	api.AddOperation(&huma.Operation{OperationID: "filehost-upload", Method: "POST", Path: "/files/", Summary: "Upload a file to the network file host", Description: "The body is the file. Authorization is HTTP Basic with the IRC account name and password, which the associated IRC server checks. The file belongs to this server's account of the same name and counts against its upload quota. Content-Disposition names the file. 201 returns the file's address in Location. 401 is a wrong login, 403 an account that may not upload here, 413 a file that is too large or over quota (the body says which), 415 a type this server does not accept, and 429 too many wrong logins or too many uploads at once." + only, RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{"application/octet-stream": {Schema: &huma.Schema{Type: "string", Format: "binary"}}}}, Responses: map[string]*huma.Response{"201": {Description: "Stored. Location is the file's address."}, "400": {Description: "No file, or an invalid file name."}, "401": {Description: "Missing or wrong IRC login."}, "403": {Description: "The account may not upload here."}, "413": {Description: "File too large, or the upload quota is reached."}, "415": {Description: "File type not accepted."}, "429": {Description: "Too many wrong logins, or too many uploads at once."}, "503": {Description: "Logins or storage are unavailable."}}})
-	api.AddOperation(&huma.Operation{OperationID: "filehost-delete", Method: "DELETE", Path: "/files/{id}/{token}/{filename}", Summary: "Delete a file from the network file host", Description: "An IRCord addition to the standard. Authorization is HTTP Basic with the IRC login of the account that uploaded the file. 204 when deleted, 404 when there is no such file or the token is wrong, and 403 when another account owns it. The list of accounts that may upload does not apply: an account can always delete its own files." + only, Parameters: []*huma.Param{
+	api.AddOperation(&huma.Operation{OperationID: "filehost-delete", Method: "DELETE", Path: "/files/{id}/{token}/{filename}", Summary: "Delete a file from the network file host", Description: "An IRCord addition to the standard. Authorization is HTTP Basic with the IRC login of the account that uploaded the file. 204 when deleted, 404 when there is no such file or the token is wrong, and 403 when another account owns it. The list of accounts that may upload does not apply: an account can always delete its own files. A server that is not the network's file host replies 405.", Parameters: []*huma.Param{
 		{Name: "id", In: "path", Required: true, Schema: &huma.Schema{Type: "string"}},
 		{Name: "token", In: "path", Required: true, Schema: &huma.Schema{Type: "string"}},
 		{Name: "filename", In: "path", Required: true, Schema: &huma.Schema{Type: "string"}},
@@ -272,6 +278,8 @@ func (s *Server) hostDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	err := s.options.Files.DeleteReceived(r.Context(), account, chi.URLParam(r, "id"), chi.URLParam(r, "token"))
 	switch {
+	case errors.Is(err, filehost.ErrUnavailable):
+		writeProblem(w, "Storage is unavailable. Try again shortly.", http.StatusServiceUnavailable)
 	case errors.Is(err, filehost.ErrNotFound):
 		writeProblem(w, "No such file.", http.StatusNotFound)
 	case errors.Is(err, filehost.ErrForbidden):

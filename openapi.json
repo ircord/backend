@@ -35981,7 +35981,7 @@
     },
     "/files/": {
       "options": {
-        "description": "The IRC network's file host (draft/FILEHOST). Answers without a login. Accept-Post lists the accepted types. Only a server set up as the IRC network's file host answers this; others reply 404.",
+        "description": "The IRC network's file host (draft/FILEHOST). Answers without a login. Accept-Post lists the accepted types. Allow lists DELETE: senders read it to learn that this host deletes files on request, which the standard has no word for. Only a server set up as the IRC network's file host answers this; others reply 404.",
         "operationId": "filehost-options",
         "responses": {
           "204": {
@@ -36202,7 +36202,7 @@
     },
     "/files/{id}/{token}/{filename}": {
       "delete": {
-        "description": "An IRCord addition to the standard. Authorization is HTTP Basic with the IRC login of the account that uploaded the file. 204 when deleted, 404 when there is no such file or the token is wrong, and 403 when another account owns it. The list of accounts that may upload does not apply: an account can always delete its own files. Only a server set up as the IRC network's file host answers this; others reply 404.",
+        "description": "An IRCord addition to the standard. Authorization is HTTP Basic with the IRC login of the account that uploaded the file. 204 when deleted, 404 when there is no such file or the token is wrong, and 403 when another account owns it. The list of accounts that may upload does not apply: an account can always delete its own files. A server that is not the network's file host replies 405.",
         "operationId": "filehost-delete",
         "parameters": [
           {

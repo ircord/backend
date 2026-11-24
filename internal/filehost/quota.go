@@ -243,8 +243,9 @@ func (s *Service) SweepUnused(ctx context.Context, grace time.Duration) (int, er
 			}
 			if !v.deleted && !s.deletableUpstream(v.id, raw) {
 				// Its host is no longer trusted to delete it. Leave it as it is, and
-				// as in use, so that it does not take up the next sweeps' batches.
-				if _, err = s.options.Store.DB.ExecContext(ctx, "INSERT INTO file_uses(id,expires_ns) VALUES(?,0) ON CONFLICT(id) DO NOTHING", v.id); err != nil {
+				// as in use until the grace period passes, so that it does not take up the
+				// next sweeps' batches, and is looked at again if the host is trusted again.
+				if _, err = s.options.Store.DB.ExecContext(ctx, "INSERT INTO file_uses(id,expires_ns) VALUES(?,?) ON CONFLICT(id) DO NOTHING", v.id, now.Add(grace).UnixNano()); err != nil {
 					failed = append(failed, fmt.Errorf("keep file %s: %w", v.id, err))
 				}
 				continue

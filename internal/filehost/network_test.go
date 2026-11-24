@@ -235,3 +235,119 @@ func TestDeleteReceivedTellsFaultsFromMissingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func answer(status int, contentType, body string) *http.Response {
+	rec := httptest.NewRecorder()
+	if contentType != "" {
+		rec.Header().Set("Content-Type", contentType)
+	}
+	rec.WriteHeader(status)
+	rec.WriteString(body)
+	return rec.Result()
+}
+
+// Only text a person can read is passed on from a host's refusal.
+func TestRefusalPassesOnReadableTextOnly(t *testing.T) {
+	for name, tc := range map[string]struct {
+		res   *http.Response
+		want  string
+		quota bool
+	}{
+		"problem document":      {answer(400, "application/problem+json", `{"detail":"Wrong IRC login."}`), "Wrong IRC login.", false},
+		"upper case media type": {answer(400, "Application/JSON; charset=utf-8", `{"detail":"Nope"}`), "Nope", false},
+		"message field":         {answer(400, "application/json", `{"message":"Busy"}`), "Busy", false},
+		"title only":            {answer(400, "application/json", `{"title":"Bad Request"}`), "Bad Request", false},
+		"json without text":     {answer(400, "application/json", `{"x":1}`), "upstream upload was rejected (400)", false},
+		"plain text":            {answer(400, "text/plain", "Please try later"), "Please try later", false},
+		"quota":                 {answer(413, "application/json", `{"detail":"Over your limit."}`), "Over your limit.", true},
+		"login page":            {answer(400, "text/html", "<html><body>Please sign in</body></html>"), "upstream upload was rejected (400)", false},
+		"html too large":        {answer(413, "text/html", "<html>413</html>"), "upstream upload was rejected (413)", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := refusal(tc.res)
+			if err.Error() != tc.want || errors.Is(err, ErrQuota) != tc.quota {
+				t.Fatalf("%q, quota %v", err, errors.Is(err, ErrQuota))
+			}
+		})
+	}
+}
+
+// A file whose host stops being trusted is looked at again once the grace period has passed, so
+// restoring the trust lets it be cleaned.
+func TestSweepLooksAgainAtAFileWhoseHostWasUnlisted(t *testing.T) {
+	host := newOtherHost(t, true)
+	service, data := hostService(t, host, Options{})
+	ctx := context.Background()
+	up, err := service.Upload(ctx, "alice", "net", "a.png", data, host.provider(service, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	age(t, service, up.ID, 48*time.Hour)
+	trusted := service.options.TrustedHosts
+	service.options.TrustedHosts = []string{"other.example"}
+	if removed, err := service.SweepUnused(ctx, 24*time.Hour); err != nil || removed != 0 {
+		t.Fatalf("sweep with the host unlisted: %d %v", removed, err)
+	}
+	service.options.TrustedHosts = trusted
+	// Within the grace period it is still kept; after it, the host being trusted again lets it go.
+	if removed, _ := service.SweepUnused(ctx, 24*time.Hour); removed != 0 {
+		t.Fatal("removed during the grace period")
+	}
+	if _, err = service.options.Store.DB.Exec("UPDATE file_uses SET expires_ns=1 WHERE id=?", up.ID); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := service.SweepUnused(ctx, 24*time.Hour); err != nil || removed != 1 || host.deleteRequests.Load() != 1 {
+		t.Fatalf("after trust returned: removed %d, %d deletions, %v", removed, host.deleteRequests.Load(), err)
+	}
+}
+
+// Only a host that describes the types it takes is taken for a file host.
+func TestNetworkNeedsTheHostToDescribeItself(t *testing.T) {
+	page := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	defer page.Close()
+	u, _ := url.Parse(page.URL)
+	service, _ := quotaService(t, Options{TrustedHosts: []string{u.Hostname()}, Client: page.Client()})
+	p, ok := service.Network(context.Background(), page.URL+"/files/", "alice", "pw")
+	if !ok || p.Available || p.Reason == "" {
+		t.Fatalf("a page that answers everything was taken for a file host: %+v %v", p, ok)
+	}
+}
+
+// Answers that repeating the request cannot change end the attempt; others are tried again.
+func TestHostDeletionAnswersThatAreFinal(t *testing.T) {
+	for status, final := range map[int]bool{301: true, 307: true, 400: true, 401: true, 403: true, 405: true, 409: true, 501: true, 408: false, 429: false, 500: false, 502: false, 503: false} {
+		host := newOtherHost(t, true)
+		host.deleteStatus.Store(int32(status))
+		service, data := hostService(t, host, Options{})
+		up, err := service.Upload(context.Background(), "alice", "net", "a.png", data, host.provider(service, true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = service.deleteRemote(context.Background(), service.creds(), "alice", "net", up.ID, up.URL)
+		if errors.Is(err, ErrRemoteRefused) != final || err == nil {
+			t.Fatalf("%d: %v (final %v)", status, err, final)
+		}
+	}
+	for _, status := range []int{200, 204, 404, 410} {
+		host := newOtherHost(t, true)
+		host.deleteStatus.Store(int32(status))
+		service, data := hostService(t, host, Options{})
+		up, _ := service.Upload(context.Background(), "alice", "net", "a.png", data, host.provider(service, true))
+		if err := service.deleteRemote(context.Background(), service.creds(), "alice", "net", up.ID, up.URL); err != nil {
+			t.Fatalf("%d: %v", status, err)
+		}
+	}
+}
+
+// A database fault is not "no such file": the sender would forget a file that is still there.
+func TestDeleteReceivedReportsADatabaseFault(t *testing.T) {
+	store, dir, _ := fixture(t)
+	service, err := New(Options{Store: store, Blob: Local{Root: dir + "/files"}, PublicURL: "https://chat.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.DB.Close()
+	if err = service.DeleteReceived(context.Background(), "alice", "id", "token"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("%v", err)
+	}
+}

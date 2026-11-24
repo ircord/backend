@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -43,9 +44,10 @@ func (s *Service) creds() Credentials {
 }
 
 // listed reports whether the operator trusts the host with IRC logins
-// (IRCORD_FILEHOST_TRUSTED_HOSTS). Only these hosts are known to speak the
-// IRCord deletion request, and they are the only ones a message upload goes to
-// when the server prefers the network's host.
+// (IRCORD_FILEHOST_TRUSTED_HOSTS). Only these hosts are sent a deletion
+// request, and only if they also said they delete files (deletableUpstream);
+// they are the only ones a message upload goes to when the server prefers the
+// network's host.
 func (s *Service) listed(host string) bool {
 	for _, h := range s.options.TrustedHosts {
 		if h = strings.TrimSpace(h); h != "" && strings.EqualFold(h, host) {
@@ -91,8 +93,12 @@ func (s *Service) Network(ctx context.Context, advertised, user, password string
 	}
 	status, types, deletes, err := s.discover(ctx, u)
 	switch {
-	case err == nil && status >= 200 && status < 300:
+	case err == nil && status >= 200 && status < 300 && len(types) > 0:
 		return s.upstream(u, types, deletes, user, password), true
+	case err == nil && status >= 200 && status < 300:
+		// A 2xx that names no accepted types is a page that answers everything, such as a
+		// login wall, not a file host.
+		return Provider{Provider: "upstream", Types: []string{}, Reason: "The network's file host did not describe itself. Try again shortly."}, true
 	case err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed || status == http.StatusGone || status == http.StatusNotImplemented):
 		return Provider{}, false
 	}
@@ -120,9 +126,14 @@ func (s *Service) Receive(ctx context.Context, owner, name string, data []byte) 
 // file another account owns, and any other error a fault of this server's
 // storage. Only the token is checked, so the stored file is not opened.
 func (s *Service) DeleteReceived(ctx context.Context, owner, id, token string) error {
-	r, err := s.Record("", id)
-	if err != nil {
+	var r Record
+	err := s.options.Store.DB.QueryRowContext(ctx, "SELECT owner,backend,token_hash FROM files WHERE id=? AND deleted=0", id).Scan(&r.Owner, &r.Backend, &r.TokenHash)
+	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
+	}
+	if err != nil {
+		// A fault is not "already gone": the sender would forget a file that is still here.
+		return unavailable("file metadata is unavailable")
 	}
 	hash := sha256.Sum256([]byte(token))
 	if subtle.ConstantTimeCompare(hash[:], r.TokenHash) != 1 || r.Backend == "upstream" || r.Backend == "avatar" {
@@ -162,8 +173,9 @@ func (s *Service) deleteRemote(ctx context.Context, creds Credentials, owner, ne
 	switch {
 	case res.StatusCode == http.StatusNoContent, res.StatusCode == http.StatusOK, res.StatusCode == http.StatusNotFound, res.StatusCode == http.StatusGone:
 		return nil
-	case res.StatusCode == http.StatusUnauthorized, res.StatusCode == http.StatusForbidden, res.StatusCode == http.StatusMethodNotAllowed, res.StatusCode == http.StatusNotImplemented:
-		// Another file host, such as an IRC bouncer's, that has no deletion request.
+	case res.StatusCode == http.StatusNotImplemented, res.StatusCode >= 300 && res.StatusCode < 500 && res.StatusCode != http.StatusRequestTimeout && res.StatusCode != http.StatusTooManyRequests:
+		// A host that refuses, redirects, or has no deletion request, such as an IRC
+		// bouncer's. Asking again gives the same answer.
 		return fmt.Errorf("%w (%d)", ErrRemoteRefused, res.StatusCode)
 	}
 	return fmt.Errorf("the network file host could not delete the file (%d)", res.StatusCode)
@@ -213,15 +225,24 @@ func upstreamNeedle(raw, fallback string) string {
 // person. The host's own sentence, such as its quota message, is kept.
 func refusal(res *http.Response) error {
 	raw, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
-	text := string(raw)
-	if strings.Contains(res.Header.Get("Content-Type"), "json") {
-		var problem struct{ Detail, Title string }
+	// Only text a person can read is passed on: a problem document, or plain text.
+	// Anything else, such as a login page, gets the generic sentence.
+	text := ""
+	kind, _, _ := mime.ParseMediaType(res.Header.Get("Content-Type"))
+	switch {
+	case kind == "application/json" || strings.HasSuffix(kind, "+json"):
+		var problem struct{ Detail, Title, Message string }
 		if json.Unmarshal(raw, &problem) == nil {
 			text = problem.Detail
+			if text == "" {
+				text = problem.Message
+			}
 			if text == "" {
 				text = problem.Title
 			}
 		}
+	case kind == "text/plain":
+		text = string(raw)
 	}
 	text = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
