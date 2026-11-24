@@ -12,6 +12,7 @@ type Person struct {
 	ServicesAccount  string   `json:"servicesAccount,omitempty"`
 	DisplayName      string   `json:"displayName"`
 	AvatarURL        string   `json:"avatarUrl,omitempty"`
+	AvatarSrc        string   `json:"avatarSrc,omitempty" doc:"Where clients draw the avatar: avatarUrl when it is on this server, otherwise a cached copy on this server."`
 	MemberID         string   `json:"memberId,omitempty"`
 	BackendAccountID string   `json:"backendAccountId,omitempty"`
 	Presence         string   `json:"presence" enum:"online,away,offline,unknown"`

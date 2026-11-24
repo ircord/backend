@@ -19,8 +19,9 @@ func (w *workspace) snapshot() Snapshot {
 		}
 	}
 	sort.Slice(s.Invitations, func(i, j int) bool { return s.Invitations[i].CreatedAt.Before(s.Invitations[j].CreatedAt) })
+	s.User = w.withPictures(s.User)
 	for _, v := range w.members {
-		s.Members = append(s.Members, v)
+		s.Members = append(s.Members, w.withPictures(v))
 	}
 	for _, v := range w.networks {
 		s.Networks = append(s.Networks, v)
@@ -31,6 +32,15 @@ func (w *workspace) snapshot() Snapshot {
 	sort.Slice(s.Networks, func(i, j int) bool { return s.Networks[i].ID < s.Networks[j].ID })
 	sort.Slice(s.Conversations, func(i, j int) bool { return s.Conversations[i].ID < s.Conversations[j].ID })
 	return clone(s)
+}
+
+// withPictures sets the addresses clients draw for the member's pictures. They
+// follow from the raw addresses, so stored events and replays stay consistent.
+func (w *workspace) withPictures(v Member) Member {
+	if w.manager == nil {
+		return v
+	}
+	return v.WithPictures(w.manager.options.Pictures)
 }
 
 // Cursor reads the account's committed position without constructing a snapshot.

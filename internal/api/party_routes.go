@@ -38,12 +38,18 @@ type PartyAccountInput struct {
 func (s *Server) registerParties() {
 	huma.Get(s.API, "/api/v1/parties", func(ctx context.Context, _ *struct{}) (*Output[Items[model.Party]], error) {
 		v, e := s.Manager.Parties(owner(ctx))
+		for i := range v {
+			v[i], _ = s.partyView(v[i])
+		}
 		return result(Items[model.Party]{Items: v}, e)
 	})
 	huma.Get(s.API, "/api/v1/parties/candidates", func(ctx context.Context, in *struct {
 		Search string `query:"search" maxLength:"100"`
 	}) (*Output[Items[model.PartyCandidate]], error) {
 		v, e := s.Manager.PartyCandidatesContext(ctx, owner(ctx), in.Search)
+		for i := range v {
+			v[i] = v[i].WithPictures(s.pictures())
+		}
 		return result(Items[model.PartyCandidate]{Items: v}, e)
 	})
 	huma.Post(s.API, "/api/v1/parties", func(ctx context.Context, in *PartyCreate) (*Output[model.Party], error) {
@@ -53,10 +59,10 @@ func (s *Server) registerParties() {
 		return result(s.Manager.ConvertParty(ctx, owner(ctx), in.ID))
 	})
 	huma.Get(s.API, "/api/v1/parties/{id}", func(ctx context.Context, in *PartyPath) (*Output[model.Party], error) {
-		return result(s.Manager.Party(owner(ctx), in.ID))
+		return s.partyResult(s.Manager.Party(owner(ctx), in.ID))
 	})
 	huma.Patch(s.API, "/api/v1/parties/{id}", func(ctx context.Context, in *PartyPatch) (*Output[model.Party], error) {
-		return result(s.Manager.UpdateParty(ctx, owner(ctx), in.ID, in.Body.Name, in.Body.Description))
+		return s.partyResult(s.Manager.UpdateParty(ctx, owner(ctx), in.ID, in.Body.Name, in.Body.Description))
 	})
 	huma.Post(s.API, "/api/v1/parties/{id}/invitations", func(ctx context.Context, in *PartyAccountInput) (*Output[model.Invitation], error) {
 		if in.Body.ServicesAccount != "" {
@@ -72,14 +78,14 @@ func (s *Server) registerParties() {
 		ID       string `path:"id"`
 		MemberID string `path:"memberId"`
 	}) (*Output[model.Party], error) {
-		return result(s.Manager.RemovePartyMember(ctx, owner(ctx), in.ID, in.MemberID))
+		return s.partyResult(s.Manager.RemovePartyMember(ctx, owner(ctx), in.ID, in.MemberID))
 	})
 	huma.Post(s.API, "/api/v1/parties/{id}/owner", func(ctx context.Context, in *PartyAccountInput) (*Output[model.Party], error) {
 		member := in.Body.MemberID
 		if member == "" {
 			member = in.Body.AccountID
 		}
-		return result(s.Manager.TransferParty(ctx, owner(ctx), in.ID, member))
+		return s.partyResult(s.Manager.TransferParty(ctx, owner(ctx), in.ID, member))
 	})
 	huma.Post(s.API, "/api/v1/invitations/{id}/accept", func(ctx context.Context, in *PartyPath) (*Output[model.Conversation], error) {
 		return result(s.Manager.AcceptInvitation(ctx, owner(ctx), in.ID))

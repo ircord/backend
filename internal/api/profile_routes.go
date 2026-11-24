@@ -55,15 +55,15 @@ type PreferencesInput struct {
 
 func (s *Server) registerProfile() {
 	huma.Patch(s.API, "/api/v1/profile", func(ctx context.Context, in *ProfileInput) (*Output[irc.Member], error) {
-		return result(s.profile(ctx, "", in))
+		return s.memberResult(s.profile(ctx, "", in))
 	})
 	huma.Get(s.API, "/api/v1/networks/{id}/profile", func(ctx context.Context, in *struct {
 		ID string `path:"id"`
 	}) (*Output[irc.Member], error) {
-		return result(s.Manager.NetworkProfile(owner(ctx), in.ID))
+		return s.memberResult(s.Manager.NetworkProfile(owner(ctx), in.ID))
 	})
 	huma.Patch(s.API, "/api/v1/networks/{id}/profile", func(ctx context.Context, in *NetworkProfileInput) (*Output[irc.Member], error) {
-		return result(s.profile(ctx, in.ID, &ProfileInput{Body: in.Body, RawBody: in.RawBody}))
+		return s.memberResult(s.profile(ctx, in.ID, &ProfileInput{Body: in.Body, RawBody: in.RawBody}))
 	})
 	if s.options.Auth == nil {
 		huma.Patch(s.API, "/api/v1/preferences", func(ctx context.Context, in *PreferencesInput) (*Output[irc.Preferences], error) {

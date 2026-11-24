@@ -23,20 +23,23 @@ import (
 	"ircord/backend/internal/linkmedia"
 	"ircord/backend/internal/model"
 	"ircord/backend/internal/push"
+	"ircord/backend/internal/remotemedia"
 	"ircord/backend/internal/storage"
 )
 
 type Identity func(http.ResponseWriter, *http.Request) (string, error)
 type Options struct {
-	Ergo      *ergo.Client
-	Admin     *admin.Verifier
-	Build     buildinfo.Info
-	Push      *push.Service
-	Files     *filehost.Service
-	Emotes    *emotes.Service
-	Media     *linkmedia.Resolver
-	PublicURL string
-	Auth      *auth.Service
+	Ergo   *ergo.Client
+	Admin  *admin.Verifier
+	Build  buildinfo.Info
+	Push   *push.Service
+	Files  *filehost.Service
+	Emotes *emotes.Service
+	// RemoteMedia caches pictures hosted on other servers; nil leaves them unproxied.
+	RemoteMedia *remotemedia.Service
+	Media       *linkmedia.Resolver
+	PublicURL   string
+	Auth        *auth.Service
 	// Activity routes alerts across the account's devices; nil leaves alerts to each client.
 	Activity *activity.Router
 	Store    *storage.Store
@@ -108,6 +111,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	s.registerConnectionAPI(router)
 	s.registerFiles(router)
 	s.registerEmotes(router)
+	s.registerRemoteMedia(router)
 	s.registerLinkMedia(router)
 	s.registerConversations()
 	s.registerParties()

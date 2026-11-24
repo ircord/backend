@@ -15,6 +15,12 @@ import (
 	"ircord/backend/internal/publicnet"
 )
 
+// Errors callers can test for.
+var (
+	ErrPrivateDestination = errors.New("private media destination blocked")
+	ErrInvalidDestination = errors.New("invalid public media destination")
+)
+
 func URL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil || len(raw) > 8192 || u.Hostname() == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") || (u.Port() != "" && u.Port() != "443" && u.Port() != "80") {
@@ -23,10 +29,10 @@ func URL(raw string) (*url.URL, error) {
 	host := strings.ToLower(u.Hostname())
 	if ip, err := netip.ParseAddr(host); err == nil {
 		if !publicnet.IsPublic(ip) {
-			return nil, errors.New("private media destination blocked")
+			return nil, ErrPrivateDestination
 		}
 	} else if host == "localhost" || strings.HasSuffix(host, ".localhost") || !strings.Contains(host, ".") {
-		return nil, errors.New("private media destination blocked")
+		return nil, ErrPrivateDestination
 	}
 	u.Fragment = ""
 	return u, nil
@@ -51,7 +57,7 @@ func Client() *http.Client {
 func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || (port != "80" && port != "443") {
-		return nil, errors.New("invalid public media destination")
+		return nil, ErrInvalidDestination
 	}
 	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
 	if err != nil {
@@ -62,7 +68,7 @@ func DialContext(ctx context.Context, network, address string) (net.Conn, error)
 	}
 	for _, ip := range ips {
 		if !publicnet.IsPublic(ip) {
-			return nil, errors.New("private media destination blocked")
+			return nil, ErrPrivateDestination
 		}
 	}
 	for _, ip := range ips {
