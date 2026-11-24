@@ -27,6 +27,35 @@ type uploadSlots struct {
 	owners map[string]int
 }
 
+// acquire takes one of the few upload slots, for the account's upload in
+// progress. It reports false when the server or the account has none left.
+func (u *uploadSlots) acquire(account string) (release func(), ok bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.total >= 4 || u.owners[account] >= 2 {
+		return nil, false
+	}
+	if u.owners == nil {
+		u.owners = map[string]int{}
+	}
+	u.total++
+	u.owners[account]++
+	return func() {
+		u.mu.Lock()
+		defer u.mu.Unlock()
+		u.total--
+		u.owners[account]--
+		if u.owners[account] == 0 {
+			delete(u.owners, account)
+		}
+	}, true
+}
+
+// messageUse is the use marker of an upload that is going to be attached to a
+// message. Only these uploads go to the network's file host; profile pictures
+// and theme backgrounds stay on this server.
+const messageUse = "message"
+
 // ServeContent removes Cache-Control on range and seek errors. Download tokens
 // must never become cacheable, including on those error responses.
 type fileResponseWriter struct{ http.ResponseWriter }
@@ -36,15 +65,25 @@ func (w fileResponseWriter) WriteHeader(status int) {
 	w.ResponseWriter.WriteHeader(status)
 }
 
-func (s *Server) provider(ctx context.Context, account, network string) filehost.Provider {
+// provider chooses where an upload goes. A message upload goes to the network's
+// own file host when this server is set to prefer it and the network has one it
+// trusts; everything else goes to this server's storage when it has any.
+func (s *Server) provider(ctx context.Context, account, network string, message bool) filehost.Provider {
 	if s.options.Files == nil {
 		return filehost.Provider{Provider: "unavailable", Reason: "File hosting is disabled.", Types: []string{}}
+	}
+	if message && s.options.NetworkMessageUploads && network != "" {
+		if _, advertised, user, password, err := s.filehostConfig(account, network); err == nil {
+			if p, ok := s.options.Files.Network(ctx, advertised, user, password); ok {
+				return p
+			}
+		}
 	}
 	local := s.options.Files.LocalProvider()
 	if local.Available {
 		return local
 	}
-	host, advertised, user, password, err := s.Manager.FilehostConfig(account, network)
+	host, advertised, user, password, err := s.filehostConfig(account, network)
 	if err != nil {
 		return local
 	}
@@ -56,12 +95,13 @@ func (s *Server) registerFiles(router chi.Router) {
 	}
 	s.uploads.owners = map[string]int{}
 	huma.Get(s.API, "/api/v1/networks/{id}/uploads", func(ctx context.Context, in *struct {
-		ID string `path:"id"`
+		ID  string `path:"id"`
+		Use string `query:"use" enum:"message" doc:"Set to message to see where a file attached to a message goes. That can be the network's own file host, with its limits."`
 	}) (*Output[filehost.Provider], error) {
 		if _, err := s.Manager.ConnectionInfo(owner(ctx), in.ID); err != nil {
 			return result(filehost.Provider{}, err)
 		}
-		return result(s.provider(ctx, owner(ctx), in.ID), nil)
+		return result(s.provider(ctx, owner(ctx), in.ID, in.Use == messageUse), nil)
 	})
 	huma.Delete(s.API, "/api/v1/uploads/{id}", func(ctx context.Context, in *struct {
 		ID string `path:"id"`
@@ -72,7 +112,7 @@ func (s *Server) registerFiles(router chi.Router) {
 		}
 		return empty(err)
 	})
-	s.API.OpenAPI().AddOperation(&huma.Operation{OperationID: "upload-file", Method: "POST", Path: "/api/v1/uploads", Summary: "Upload an account-owned file", Description: "Requires the session cookie. Optional networkId selects and scopes the filehost. Files are bounded and MIME-sniffed by the streaming handler.", Parameters: []*huma.Param{{Name: "networkId", In: "query", Schema: &huma.Schema{Type: "string"}}}, RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{"multipart/form-data": {Schema: &huma.Schema{Type: "object", Required: []string{"file"}, Properties: map[string]*huma.Schema{"file": {Type: "string", Format: "binary"}}}}}}, Responses: map[string]*huma.Response{"201": {Description: "Uploaded file metadata", Content: map[string]*huma.MediaType{"application/json": {Schema: s.API.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(filehost.Upload{}), true, "Upload")}}}}})
+	s.API.OpenAPI().AddOperation(&huma.Operation{OperationID: "upload-file", Method: "POST", Path: "/api/v1/uploads", Summary: "Upload an account-owned file", Description: "Requires the session cookie. Optional networkId selects and scopes the filehost. Files are bounded and MIME-sniffed by the streaming handler. Set use=message for a file that will be attached to a message: when the server prefers the network's file host and the network advertises one the operator trusts, the file is stored there, and the refusal text of that host, such as its quota message, is returned. Without use=message, and for profile pictures and theme backgrounds, the file stays on this server.", Parameters: []*huma.Param{{Name: "networkId", In: "query", Schema: &huma.Schema{Type: "string"}}, {Name: "use", In: "query", Description: "message marks a file that will be attached to a message.", Schema: &huma.Schema{Type: "string", Enum: []any{messageUse}}}}, RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{"multipart/form-data": {Schema: &huma.Schema{Type: "object", Required: []string{"file"}, Properties: map[string]*huma.Schema{"file": {Type: "string", Format: "binary"}}}}}}, Responses: map[string]*huma.Response{"201": {Description: "Uploaded file metadata", Content: map[string]*huma.MediaType{"application/json": {Schema: s.API.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(filehost.Upload{}), true, "Upload")}}}}})
 	router.Post("/api/v1/uploads", s.upload)
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
 		s.API.OpenAPI().AddOperation(&huma.Operation{
@@ -100,24 +140,17 @@ func (s *Server) registerFiles(router chi.Router) {
 }
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 	account := owner(r.Context())
-	s.uploads.mu.Lock()
-	if s.uploads.total >= 4 || s.uploads.owners[account] >= 2 {
-		s.uploads.mu.Unlock()
+	use := r.URL.Query().Get("use")
+	if use != "" && use != messageUse {
+		writeProblem(w, "use must be message, or left out", 400)
+		return
+	}
+	release, ok := s.uploads.acquire(account)
+	if !ok {
 		writeProblem(w, "upload capacity reached; try again shortly", 429)
 		return
 	}
-	s.uploads.total++
-	s.uploads.owners[account]++
-	s.uploads.mu.Unlock()
-	defer func() {
-		s.uploads.mu.Lock()
-		s.uploads.total--
-		s.uploads.owners[account]--
-		if s.uploads.owners[account] == 0 {
-			delete(s.uploads.owners, account)
-		}
-		s.uploads.mu.Unlock()
-	}()
+	defer release()
 	network := r.URL.Query().Get("networkId")
 	if network != "" {
 		if _, err := s.Manager.ConnectionInfo(account, network); err != nil {
@@ -125,7 +158,7 @@ func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	provider := s.provider(r.Context(), account, network)
+	provider := s.provider(r.Context(), account, network, use == messageUse)
 	if !provider.Available {
 		writeProblem(w, provider.Reason, 409)
 		return

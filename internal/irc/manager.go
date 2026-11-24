@@ -64,13 +64,15 @@ type Manager struct {
 	serviceSlots      chan struct{}
 	channelCreates    map[string]bool
 	deletedOwners     map[string]bool
-	mu                sync.Mutex
-	owners            map[string]*workspace
-	options           Options
-	ctx               context.Context
-	cancel            context.CancelFunc
-	wg                sync.WaitGroup
-	closed            bool
+	// filehostLogins are copies of IRC logins kept while an account is deleted.
+	filehostLogins map[string]func(owner, network string) (string, string, error)
+	mu             sync.Mutex
+	owners         map[string]*workspace
+	options        Options
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	closed         bool
 	// Channel-wide settings keyed by upstream network and folded channel name.
 	sharedMu     sync.Mutex
 	shared       map[string]ChannelSettings

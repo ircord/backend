@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -48,6 +49,11 @@ func Run(ctx context.Context) error {
 	if associated != nil {
 		defer associated.Close()
 	}
+	if cfg.fileHost.serve && (associated == nil || os.Getenv("IRCORD_ERGO_ACCOUNTS") == "false") {
+		// The file host takes an IRC login for the account of the same name here, which is
+		// the same person only when this server's accounts are the IRC server's accounts.
+		return fmt.Errorf("IRCORD_FILEHOST_SERVE needs the associated Ergo server, which checks the passwords, with IRCORD_ERGO_ACCOUNTS not set to false")
+	}
 	dataDir := cfg.dataDir
 	store, err := storage.Open(dataDir)
 	if err != nil {
@@ -65,7 +71,7 @@ func Run(ctx context.Context) error {
 	ircOptions := cfg.irc
 	ircOptions.Store = store
 	publicURL, blob := cfg.publicURL, cfg.blob
-	files, err := filehost.New(filehost.Options{Store: store, Blob: blob, AvatarBlob: filehost.Local{Root: filepath.Join(dataDir, "avatars")}, PublicURL: strings.TrimRight(publicURL.String(), "/"), Client: irc.HTTPClient(ircOptions.AllowPrivate), TrustedHosts: strings.Split(os.Getenv("IRCORD_FILEHOST_TRUSTED_HOSTS"), ","), QuotaBytes: cfg.uploads.quotaBytes, QuotaFiles: cfg.uploads.quotaFiles})
+	files, err := filehost.New(filehost.Options{Store: store, Blob: blob, AvatarBlob: filehost.Local{Root: filepath.Join(dataDir, "avatars")}, PublicURL: strings.TrimRight(publicURL.String(), "/"), Client: irc.HTTPClientTimeout(ircOptions.AllowPrivate, irc.UploadTimeout), TrustedHosts: strings.Split(os.Getenv("IRCORD_FILEHOST_TRUSTED_HOSTS"), ","), QuotaBytes: cfg.uploads.quotaBytes, QuotaFiles: cfg.uploads.quotaFiles})
 	if err != nil {
 		return err
 	}
@@ -141,6 +147,10 @@ func Run(ctx context.Context) error {
 	}
 	manager := irc.New(ircOptions)
 	defer manager.Close()
+	files.UseCredentials(func(owner, network string) (string, string, error) {
+		_, _, user, password, err := manager.FilehostConfig(owner, network)
+		return user, password, err
+	})
 	router.SetSource(manager)
 	authOptions := cfg.auth
 	if associated != nil && os.Getenv("IRCORD_ERGO_ACCOUNTS") != "false" {
@@ -175,13 +185,23 @@ func Run(ctx context.Context) error {
 		return err
 	}
 	authOptions.BeforeDelete = func(owner string) error {
+		// Dropping the owner forgets their IRC logins, which deleting their files on
+		// a network's file host needs.
+		logins := manager.FilehostLogins(owner)
 		if err := manager.DropOwner(owner); err != nil {
 			return err
 		}
 		router.Forget(owner)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Each file on a network's file host is a request of its own. The person is waiting,
+		// so this does what it can in a minute; the hourly cleanup of deleted accounts
+		// retries the rest with the logins kept above.
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		return files.DeleteAccount(ctx, owner)
+		if err := files.DeleteAccountUsing(ctx, owner, logins); err != nil {
+			return err
+		}
+		manager.ForgetFilehostLogins(owner)
+		return nil
 	}
 	authOptions.SessionEnded = router.EndSession
 	authOptions.SignedOut = manager.SignOut
@@ -230,7 +250,7 @@ func Run(ctx context.Context) error {
 			}
 		}
 	}()
-	app := api.New(manager, api.Options{Media: cfg.media, Store: store, Files: files, Emotes: catalog, RemoteMedia: remote, DisableCustomCSS: !cfg.customCSS, Push: pushes, Activity: router, Auth: sessions, Origins: cfg.origins, Admin: verifier, Build: buildinfo.Current(), Ergo: associated, PublicURL: publicURL.String()})
+	app := api.New(manager, api.Options{Media: cfg.media, Store: store, Files: files, Emotes: catalog, RemoteMedia: remote, DisableCustomCSS: !cfg.customCSS, Push: pushes, Activity: router, Auth: sessions, Origins: cfg.origins, Admin: verifier, Build: buildinfo.Current(), Ergo: associated, PublicURL: publicURL.String(), FileHost: api.FileHostOptions{Serve: cfg.fileHost.serve, Accounts: cfg.fileHost.accounts}, NetworkMessageUploads: cfg.fileHost.messageUploads == messageUploadsNetwork})
 	server := &http.Server{Addr: cfg.listen, Handler: app.Handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 90 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32768}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()

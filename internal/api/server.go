@@ -47,6 +47,21 @@ type Options struct {
 	Origins  []string
 	// DisableCustomCSS stops personal themes from applying their custom CSS on this instance.
 	DisableCustomCSS bool
+	// FileHost makes this server the IRC network's file host.
+	FileHost FileHostOptions
+	// NetworkMessageUploads sends the files people attach to messages to the
+	// network's own file host, when it advertises one this server trusts.
+	NetworkMessageUploads bool
+}
+
+// FileHostOptions configures serving the IRC network's file host (draft/FILEHOST).
+type FileHostOptions struct {
+	// Serve accepts uploads at /files/ from any login the associated IRC server accepts.
+	// It needs Options.Ergo and Options.Files with storage.
+	Serve bool
+	// Accounts limits who may upload, by account name. Empty allows every
+	// account on the network that also has an account on this server.
+	Accounts []string
 }
 
 type Server struct {
@@ -56,12 +71,16 @@ type Server struct {
 	API       huma.API
 	options   Options
 
-	socketsMu    sync.Mutex
-	sockets      map[string]int
-	uploads      uploadSlots
-	offlineFiles chan struct{}
-	offlineHTTP  *http.Client
-	offlineCache *offlineCache
+	socketsMu sync.Mutex
+	sockets   map[string]int
+	uploads   uploadSlots
+	// fileHostFailures counts wrong logins to the network file host.
+	fileHostFailures loginFailures
+	// filehostConfig finds a network connection's file host and IRC login.
+	filehostConfig func(owner, network string) (host, advertised, user, password string, err error)
+	offlineFiles   chan struct{}
+	offlineHTTP    *http.Client
+	offlineCache   *offlineCache
 	// emoteSlots bounds concurrent emote uploads and imports.
 	emoteSlots chan struct{}
 	hashField  hashFieldLimiter
@@ -78,7 +97,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	if options.Build.Version == "" {
 		options.Build = buildinfo.Current()
 	}
-	s := &Server{Manager: manager, options: options, sockets: map[string]int{}, startedAt: time.Now().UTC()}
+	s := &Server{Manager: manager, options: options, sockets: map[string]int{}, startedAt: time.Now().UTC(), filehostConfig: manager.FilehostConfig}
 	if options.Activity != nil && options.Store != nil {
 		options.Activity.SetDevices(options.Store)
 	}
@@ -110,6 +129,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	s.registerHashField()
 	s.registerConnectionAPI(router)
 	s.registerFiles(router)
+	s.registerFileHost(router)
 	s.registerEmotes(router)
 	s.registerRemoteMedia(router)
 	s.registerLinkMedia(router)
