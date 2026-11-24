@@ -73,7 +73,7 @@ func (s *Server) provider(ctx context.Context, account, network string, message 
 		return filehost.Provider{Provider: "unavailable", Reason: "File hosting is disabled.", Types: []string{}}
 	}
 	if message && s.options.NetworkMessageUploads && network != "" {
-		if _, advertised, user, password, err := s.Manager.FilehostConfig(account, network); err == nil {
+		if _, advertised, user, password, err := s.filehostConfig(account, network); err == nil {
 			if p, ok := s.options.Files.Network(ctx, advertised, user, password); ok {
 				return p
 			}
@@ -83,7 +83,7 @@ func (s *Server) provider(ctx context.Context, account, network string, message 
 	if local.Available {
 		return local
 	}
-	host, advertised, user, password, err := s.Manager.FilehostConfig(account, network)
+	host, advertised, user, password, err := s.filehostConfig(account, network)
 	if err != nil {
 		return local
 	}

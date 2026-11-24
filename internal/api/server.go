@@ -76,9 +76,11 @@ type Server struct {
 	uploads   uploadSlots
 	// fileHostFailures counts wrong logins to the network file host.
 	fileHostFailures loginFailures
-	offlineFiles     chan struct{}
-	offlineHTTP      *http.Client
-	offlineCache     *offlineCache
+	// filehostConfig finds a network connection's file host and IRC login.
+	filehostConfig func(owner, network string) (host, advertised, user, password string, err error)
+	offlineFiles   chan struct{}
+	offlineHTTP    *http.Client
+	offlineCache   *offlineCache
 	// emoteSlots bounds concurrent emote uploads and imports.
 	emoteSlots chan struct{}
 	hashField  hashFieldLimiter
@@ -95,7 +97,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	if options.Build.Version == "" {
 		options.Build = buildinfo.Current()
 	}
-	s := &Server{Manager: manager, options: options, sockets: map[string]int{}, startedAt: time.Now().UTC()}
+	s := &Server{Manager: manager, options: options, sockets: map[string]int{}, startedAt: time.Now().UTC(), filehostConfig: manager.FilehostConfig}
 	if options.Activity != nil && options.Store != nil {
 		options.Activity.SetDevices(options.Store)
 	}

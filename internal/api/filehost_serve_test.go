@@ -8,10 +8,13 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,6 +29,7 @@ import (
 // associated IRC server that knows the passwords in logins.
 type networkHost struct {
 	server *httptest.Server
+	app    *Server
 	store  *storage.Store
 	files  *filehost.Service
 	logins map[string]string
@@ -75,8 +79,8 @@ func newNetworkHost(t *testing.T, serve bool, accounts []string, tune func(*file
 	}
 	manager := irc.New(irc.Options{Store: h.store, Files: h.files})
 	sessions := auth.New(h.store, auth.Options{Registration: true})
-	app := New(manager, Options{Store: h.store, Files: h.files, Auth: sessions, Ergo: associated, FileHost: FileHostOptions{Serve: serve, Accounts: accounts}})
-	h.server.Config.Handler = app.Handler
+	h.app = New(manager, Options{Store: h.store, Files: h.files, Auth: sessions, Ergo: associated, FileHost: FileHostOptions{Serve: serve, Accounts: accounts}})
+	h.server.Config.Handler = h.app.Handler
 	h.server.StartTLS()
 	t.Cleanup(func() { sessions.Close(); manager.Close(); h.server.Close() })
 	return h
@@ -131,6 +135,10 @@ func TestNetworkFileHostDescribesItself(t *testing.T) {
 	}
 	if h.checks != 0 {
 		t.Fatal("discovery checked a login")
+	}
+	// Senders read this to learn that files can be deleted here, which the standard has no word for.
+	if !strings.Contains(res.Header.Get("Allow"), "DELETE") {
+		t.Fatalf("discovery does not advertise deletion: %q", res.Header.Get("Allow"))
 	}
 }
 
@@ -262,7 +270,7 @@ func TestNetworkFileHostDeletion(t *testing.T) {
 	if res := h.do(t, "DELETE", location, "", "", nil, nil); res.StatusCode != 401 {
 		t.Fatalf("without login: %d", res.StatusCode)
 	}
-	if res := h.do(t, "DELETE", location, "bob", "bob-secret", nil, nil); res.StatusCode != 404 {
+	if res := h.do(t, "DELETE", location, "bob", "bob-secret", nil, nil); res.StatusCode != 403 {
 		t.Fatalf("another account's login: %d", res.StatusCode)
 	}
 	if res := h.do(t, "DELETE", strings.TrimSuffix(location, "/pixel.png")[:len(location)-len("/pixel.png")-3]+"abc/pixel.png", "alice", "alice-secret", nil, nil); res.StatusCode != 404 {
@@ -481,5 +489,148 @@ func TestMessageUploadMarkerIsValidatedAndOptional(t *testing.T) {
 	}
 	if got := post("?use=profile"); got != 400 {
 		t.Fatalf("unknown marker: %d", got)
+	}
+}
+
+// The list of accounts that may upload is not a list of accounts that may delete:
+// someone taken off it can still remove what they stored.
+func TestNetworkFileHostDeletionIgnoresTheUploadList(t *testing.T) {
+	h := newNetworkHost(t, true, []string{"alice"}, nil)
+	location := h.post(t, "alice", "alice-secret", pngBytes(t, 2, 2)).Header.Get("Location")
+	h.app.options.FileHost.Accounts = []string{"bob"}
+	if res := h.post(t, "alice", "alice-secret", pngBytes(t, 2, 3)); res.StatusCode != 403 {
+		t.Fatalf("an account taken off the list uploaded: %d", res.StatusCode)
+	}
+	if res := h.do(t, "DELETE", location, "alice", "alice-secret", nil, nil); res.StatusCode != 204 {
+		t.Fatalf("delete after being taken off the list: %d", res.StatusCode)
+	}
+}
+
+// Names the IRC server could fold into an account of another spelling never reach it, so each
+// account has one limit.
+func TestNetworkFileHostRefusesNamesThatCannotBeAccountsHere(t *testing.T) {
+	h := newNetworkHost(t, true, nil, nil)
+	for _, name := range []string{"ａｌｉｃｅ", "al ice"} {
+		if res := h.post(t, name, "alice-secret", pngBytes(t, 2, 2)); res.StatusCode != 401 {
+			t.Fatalf("%q: %d", name, res.StatusCode)
+		}
+	}
+	if h.checks != 0 {
+		t.Fatalf("%d names reached the IRC server", h.checks)
+	}
+}
+
+// Spellings that the IRC server treats as one account are counted as one.
+func TestLoginKeyFoldsAsTheIRCServerDoes(t *testing.T) {
+	if loginKey("Al[ice]\\^") != loginKey("al{ice}|~") || loginKey("alice") == loginKey("alicf") {
+		t.Fatal(loginKey("Al[ice]\\^"), loginKey("al{ice}|~"))
+	}
+}
+
+// Logins from one IPv6 /64 share one budget, as for sign-in; one client holds a whole /64.
+func TestNetworkFileHostCountsAnIPv6NetworkAsOneClient(t *testing.T) {
+	h := newNetworkHost(t, true, nil, nil)
+	request := func(remote string) string {
+		r, _ := http.NewRequest("POST", "/files/", nil)
+		r.RemoteAddr = remote
+		return h.app.clientAddress(r)
+	}
+	if request("[2001:db8:1:2::1]:4000") != request("[2001:db8:1:2:ffff::9]:5000") {
+		t.Fatal("two addresses in one /64 are counted separately")
+	}
+	if request("[2001:db8:1:2::1]:4000") == request("[2001:db8:1:3::1]:4000") {
+		t.Fatal("two networks are counted together")
+	}
+	if request("192.0.2.1:1") == request("192.0.2.2:1") {
+		t.Fatal("IPv4 clients are counted together")
+	}
+}
+
+// Guesses made at the same moment cannot all pass a limit that one of them uses up.
+func TestLoginAttemptsAreCountedBeforeTheyAreChecked(t *testing.T) {
+	var l loginFailures
+	var allowed atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if l.begin("192.0.2.1", "alice") {
+				allowed.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if allowed.Load() != fileHostPairFailures {
+		t.Fatalf("%d of 50 simultaneous attempts passed a limit of %d", allowed.Load(), fileHostPairFailures)
+	}
+	// A login that proves right gives its attempt back.
+	var ok loginFailures
+	for i := 0; i < 3*fileHostPairFailures; i++ {
+		if !ok.begin("192.0.2.2", "bob") {
+			t.Fatal("right logins used up the limit")
+		}
+		ok.proved("192.0.2.2", "bob")
+	}
+}
+
+// A message upload goes to the network's file host through the API when the server prefers it,
+// and nothing else does.
+func TestMessageUploadsGoToTheNetworkHostOnlyWhenAsked(t *testing.T) {
+	h := newNetworkHost(t, true, nil, nil)
+	app, server, store, _ := authenticatedApp(t)
+	host := strings.TrimPrefix(h.server.URL, "https://")
+	files, err := filehost.New(filehost.Options{Store: store, Blob: filehost.Local{Root: filepath.Join(t.TempDir(), "files")}, PublicURL: server.URL, Client: h.server.Client(), TrustedHosts: []string{host[:strings.LastIndex(host, ":")]}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.options.Files = files
+	app.options.NetworkMessageUploads = true
+	client := cookieClient()
+	register(t, client, server.URL)
+	var network irc.Network
+	if err = json.Unmarshal(request(t, client, "POST", server.URL+"/api/v1/networks", irc.NetworkConfig{ID: "net", Name: "Net", Host: "127.0.0.1", Port: 1, Nick: "tester"}, 200), &network); err != nil {
+		t.Fatal(err)
+	}
+	app.filehostConfig = func(owner, network string) (string, string, string, string, error) {
+		return "irc.example.com", h.files_(), "alice", "alice-secret", nil
+	}
+	upload := func(query string) filehost.Upload {
+		t.Helper()
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "pixel.png")
+		part.Write(pngBytes(t, 3, 2))
+		w.Close()
+		req, _ := http.NewRequest("POST", server.URL+"/api/v1/uploads?networkId="+network.ID+query, &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+		res, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var u filehost.Upload
+		raw, _ := io.ReadAll(res.Body)
+		if res.StatusCode != 201 || json.Unmarshal(raw, &u) != nil {
+			t.Fatalf("upload %s: %d %s", query, res.StatusCode, raw)
+		}
+		return u
+	}
+	if u := upload("&use=message"); !strings.HasPrefix(u.URL, h.server.URL+"/files/") {
+		t.Fatalf("a message upload stayed on this server: %s", u.URL)
+	}
+	if u := upload(""); !strings.HasPrefix(u.URL, server.URL+"/files/") {
+		t.Fatalf("an upload without the marker, such as a profile picture, left this server: %s", u.URL)
+	}
+	var where filehost.Provider
+	if err = json.Unmarshal(request(t, client, "GET", server.URL+"/api/v1/networks/"+network.ID+"/uploads?use=message", nil, 200), &where); err != nil || where.Provider != "upstream" || !where.CanDelete {
+		t.Fatalf("where message uploads go: %+v %v", where, err)
+	}
+	if err = json.Unmarshal(request(t, client, "GET", server.URL+"/api/v1/networks/"+network.ID+"/uploads", nil, 200), &where); err != nil || where.Provider == "upstream" {
+		t.Fatalf("where other uploads go: %+v %v", where, err)
+	}
+	app.options.NetworkMessageUploads = false
+	if u := upload("&use=message"); !strings.HasPrefix(u.URL, server.URL+"/files/") {
+		t.Fatalf("a message upload left this server with the setting off: %s", u.URL)
 	}
 }

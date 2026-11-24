@@ -2,6 +2,8 @@ package filehost
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -62,11 +64,18 @@ func (s *Service) anyListed() bool {
 	return false
 }
 
-// deletableUpstream reports whether a file at raw is on a host this server may
-// send a deletion request to.
-func (s *Service) deletableUpstream(raw string) bool {
+// deletableUpstream reports whether the stored file id, at raw on a network's
+// file host, may be sent a deletion request: the operator trusts the host with
+// the IRC login, and the host said when the file was stored that it deletes
+// files on request. Trust alone is not enough: a host trusted only for uploads,
+// such as an IRC bouncer's, does not answer IRCord's request.
+func (s *Service) deletableUpstream(id, raw string) bool {
 	u, err := url.Parse(raw)
-	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil && s.listed(u.Hostname())
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !s.listed(u.Hostname()) {
+		return false
+	}
+	var can bool
+	return s.options.Store.DB.QueryRow("SELECT can_delete FROM file_remote WHERE id=?", id).Scan(&can) == nil && can
 }
 
 // Network chooses the network's own file host for a message upload. It reports
@@ -80,10 +89,10 @@ func (s *Service) Network(ctx context.Context, advertised, user, password string
 	if advertised == "" || user == "" || err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || !s.listed(u.Hostname()) {
 		return Provider{}, false
 	}
-	status, types, err := s.discover(ctx, u)
+	status, types, deletes, err := s.discover(ctx, u)
 	switch {
 	case err == nil && status >= 200 && status < 300:
-		return s.upstream(u, types, user, password), true
+		return s.upstream(u, types, deletes, user, password), true
 	case err == nil && (status == http.StatusNotFound || status == http.StatusMethodNotAllowed || status == http.StatusGone || status == http.StatusNotImplemented):
 		return Provider{}, false
 	}
@@ -101,21 +110,26 @@ func (s *Service) Receive(ctx context.Context, owner, name string, data []byte) 
 	}
 	if err = s.markUsed(owner, upload.ID); err != nil {
 		_ = s.Delete(ctx, owner, upload.ID)
-		return Upload{}, fmt.Errorf("file metadata is unavailable")
+		return Upload{}, unavailable("file metadata is unavailable")
 	}
 	return upload, nil
 }
 
-// DeleteReceived deletes the file at the address id and token name, when owner
-// uploaded it. A wrong token or another owner's file is ErrNotFound.
+// DeleteReceived deletes the file at the address id and token, when owner
+// uploaded it. ErrNotFound means no such file or a wrong token, ErrForbidden a
+// file another account owns, and any other error a fault of this server's
+// storage. Only the token is checked, so the stored file is not opened.
 func (s *Service) DeleteReceived(ctx context.Context, owner, id, token string) error {
-	r, body, err := s.Download(ctx, id, token)
+	r, err := s.Record("", id)
 	if err != nil {
 		return ErrNotFound
 	}
-	_ = body.Close()
-	if r.Owner != owner || r.Backend == "avatar" {
+	hash := sha256.Sum256([]byte(token))
+	if subtle.ConstantTimeCompare(hash[:], r.TokenHash) != 1 || r.Backend == "upstream" || r.Backend == "avatar" {
 		return ErrNotFound
+	}
+	if r.Owner != owner {
+		return ErrForbidden
 	}
 	return s.Delete(ctx, owner, id)
 }
@@ -125,8 +139,8 @@ func (s *Service) AcceptPost() string { return strings.Join(s.options.Types, ", 
 
 // deleteRemote asks a network's file host to delete the file at raw, as owner's
 // login on that network. A file that is already gone counts as deleted.
-func (s *Service) deleteRemote(ctx context.Context, creds Credentials, owner, network, raw string) error {
-	if !s.deletableUpstream(raw) {
+func (s *Service) deleteRemote(ctx context.Context, creds Credentials, owner, network, id, raw string) error {
+	if !s.deletableUpstream(id, raw) {
 		return fmt.Errorf("%w: the host is not trusted", ErrRemoteRefused)
 	}
 	user, password, err := creds(owner, network)
@@ -163,10 +177,10 @@ func (s *Service) removeUpstream(ctx context.Context, creds Credentials, owner, 
 	if err != nil {
 		return false, err
 	}
-	if !s.deletableUpstream(raw) {
+	if !s.deletableUpstream(id, raw) {
 		return false, nil
 	}
-	err = s.deleteRemote(ctx, creds, owner, network, raw)
+	err = s.deleteRemote(ctx, creds, owner, network, id, raw)
 	if errors.Is(err, ErrRemoteRefused) {
 		slog.Warn("The network file host kept a file that was deleted here", "file", id, "reason", err)
 		return false, nil
@@ -184,22 +198,15 @@ func (s *Service) upstreamTarget(ctx context.Context, id string) (network, raw s
 	return network, raw, err
 }
 
-// upstreamNeedle is the part of a file host address that a message sent with
-// it contains, which the unused-upload sweep looks for in stored messages.
+// upstreamNeedle is the text a message sent with a file on a network's file
+// host contains, which the unused-upload sweep looks for in stored messages: the
+// stored address without its scheme. It makes no assumption about how the host
+// lays out its addresses.
 func upstreamNeedle(raw, fallback string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fallback
+	if rest, ok := strings.CutPrefix(raw, "https://"); ok && rest != "" {
+		return rest
 	}
-	i := strings.Index(u.Path, "/files/")
-	if i < 0 {
-		return fallback
-	}
-	parts := strings.SplitN(u.Path[i:], "/", 4)
-	if len(parts) < 3 || parts[2] == "" {
-		return fallback
-	}
-	return "/files/" + parts[2] + "/"
+	return fallback
 }
 
 // refusal turns a file host's answer to an upload into the error shown to the

@@ -36202,7 +36202,7 @@
     },
     "/files/{id}/{token}/{filename}": {
       "delete": {
-        "description": "An IRCord addition to the standard. Authorization is HTTP Basic with the IRC login of the account that uploaded the file. 204 when deleted, 404 when no such file belongs to that account. Only a server set up as the IRC network's file host answers this; others reply 404.",
+        "description": "An IRCord addition to the standard. Authorization is HTTP Basic with the IRC login of the account that uploaded the file. 204 when deleted, 404 when there is no such file or the token is wrong, and 403 when another account owns it. The list of accounts that may upload does not apply: an account can always delete its own files. Only a server set up as the IRC network's file host answers this; others reply 404.",
         "operationId": "filehost-delete",
         "parameters": [
           {
@@ -36248,17 +36248,10 @@
             "description": "Missing or wrong IRC login."
           },
           "403": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Request failed; see the problem detail."
+            "description": "The file belongs to another account, or this server has no account for the login."
           },
           "404": {
-            "description": "No such file for this account."
+            "description": "No such file, or a wrong token."
           },
           "409": {
             "content": {
@@ -36313,15 +36306,11 @@
             },
             "description": "Request failed; see the problem detail."
           },
+          "502": {
+            "description": "The file could not be deleted from storage. Try again."
+          },
           "503": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Request failed; see the problem detail."
+            "description": "Logins or accounts are unavailable."
           }
         },
         "summary": "Delete a file from the network file host",

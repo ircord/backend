@@ -24,9 +24,14 @@ const UploadTimeout = 5 * time.Minute
 
 // HTTPClientTimeout is HTTPClient with its own limit for a whole request.
 func HTTPClientTimeout(allowPrivate bool, timeout time.Duration) *http.Client {
+	// The server may decode and store a whole file before it answers.
+	headers := 10 * time.Second
+	if timeout > 30*time.Second {
+		headers = time.Minute
+	}
 	return &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 		return (safeDialer{ctx: ctx, allowPrivate: allowPrivate}).Dial(network, address)
-	}, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second, MaxIdleConns: 100, MaxIdleConnsPerHost: 4}}
+	}, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: headers, MaxIdleConns: 100, MaxIdleConnsPerHost: 4}}
 }
 
 type safeDialer struct {

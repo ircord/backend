@@ -87,6 +87,19 @@ var ErrNotFound = errors.New("upload not found")
 // ErrType reports a file whose content is not an accepted type.
 var ErrType = errors.New("unsupported file type")
 
+// ErrUnavailable reports a fault of this server's storage or database, not a
+// problem with the file.
+var ErrUnavailable = errors.New("file storage is unavailable")
+
+type unavailableError string
+
+func (e unavailableError) Error() string        { return string(e) }
+func (e unavailableError) Is(target error) bool { return target == ErrUnavailable }
+func unavailable(text string) error             { return unavailableError(text) }
+
+// ErrForbidden reports a file that another account owns.
+var ErrForbidden = errors.New("the file belongs to another account")
+
 // ErrSize reports an empty file or one over the upload limit.
 var ErrSize = errors.New("file exceeds the upload limit or is empty")
 
@@ -112,6 +125,12 @@ func New(options Options) (*Service, error) {
 		return nil, err
 	}
 	if err = createUses(options.Store.DB); err != nil {
+		return nil, err
+	}
+	// A file kept on a network file host has a row here only when that host said,
+	// when the file was stored, that it deletes files on request. Files stored
+	// before this table existed have none, and are never sent a deletion request.
+	if _, err = options.Store.DB.Exec(`CREATE TABLE IF NOT EXISTS file_remote(id TEXT PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,can_delete INTEGER NOT NULL);`); err != nil {
 		return nil, err
 	}
 	return &Service{options: options}, nil
@@ -154,7 +173,7 @@ func (s *Service) Resolve(ctx context.Context, host, advertised, user, password 
 			return local
 		}
 	}
-	status, types, err := s.discover(ctx, u)
+	status, types, deletes, err := s.discover(ctx, u)
 	if err != nil {
 		local.Reason = "The upstream filehost is unavailable."
 		return local
@@ -163,33 +182,41 @@ func (s *Service) Resolve(ctx context.Context, host, advertised, user, password 
 		local.Reason = "The upstream filehost does not support discovery."
 		return local
 	}
-	return s.upstream(u, types, user, password)
+	return s.upstream(u, types, deletes, user, password)
 }
 
-// discover asks a file host what it accepts. It sends no credential.
-func (s *Service) discover(ctx context.Context, u *url.URL) (status int, types []string, err error) {
+// discover asks a file host what it accepts, and whether it says it deletes
+// files on request (DELETE in its Allow header). It sends no credential.
+func (s *Service) discover(ctx context.Context, u *url.URL) (status int, types []string, deletes bool, err error) {
 	probe, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(probe, "OPTIONS", u.String(), nil)
 	res, err := s.options.Client.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, false, err
 	}
 	defer res.Body.Close()
+	for _, m := range strings.Split(res.Header.Get("Allow"), ",") {
+		if strings.EqualFold(strings.TrimSpace(m), http.MethodDelete) {
+			deletes = true
+		}
+	}
 	for _, t := range strings.Split(res.Header.Get("Accept-Post"), ",") {
 		t = strings.TrimSpace(t)
 		if t != "" {
 			types = append(types, t)
 		}
 	}
-	return res.StatusCode, types, nil
+	return res.StatusCode, types, deletes, nil
 }
 
-func (s *Service) upstream(u *url.URL, types []string, user, password string) Provider {
+// upstream describes uploading to a file host. Files on it can be deleted when
+// the host says it deletes them and the operator trusts it with the login.
+func (s *Service) upstream(u *url.URL, types []string, deletes bool, user, password string) Provider {
 	if len(types) == 0 {
 		types = s.options.Types
 	}
-	return Provider{CanDelete: s.listed(u.Hostname()), Provider: "upstream", Available: true, MaxBytes: s.options.MaxBytes, Types: types, URL: u.String(), User: user, Password: password}
+	return Provider{CanDelete: deletes && s.listed(u.Hostname()), Provider: "upstream", Available: true, MaxBytes: s.options.MaxBytes, Types: types, URL: u.String(), User: user, Password: password}
 }
 func accepted(types []string, contentType string) bool {
 	for _, t := range types {
@@ -268,7 +295,7 @@ func (s *Service) Upload(ctx context.Context, owner, network, name string, data 
 		}
 		upload.URL = strings.TrimRight(s.options.PublicURL, "/") + "/files/" + upload.ID + "/" + token + "/" + url.PathEscape(name)
 		if err := blob.Put(ctx, objectKey, bytes.NewReader(data), upload.Size, contentType); err != nil {
-			return Upload{}, fmt.Errorf("file storage is unavailable")
+			return Upload{}, unavailable("file storage is unavailable")
 		}
 	}
 	raw, _ := json.Marshal(upload)
@@ -291,6 +318,9 @@ func (s *Service) Upload(ctx context.Context, owner, network, name string, data 
 		if err == nil {
 			_, err = tx.Exec("INSERT INTO file_metadata(id,network,payload) VALUES(?,?,?)", upload.ID, network, raw)
 		}
+		if err == nil && provider.Provider == "upstream" {
+			_, err = tx.Exec("INSERT INTO file_remote(id,can_delete) VALUES(?,?)", upload.ID, provider.CanDelete)
+		}
 		if err == nil {
 			err = tx.Commit()
 		}
@@ -302,7 +332,7 @@ func (s *Service) Upload(ctx context.Context, owner, network, name string, data 
 		if errors.Is(err, ErrQuota) {
 			return Upload{}, err
 		}
-		return Upload{}, fmt.Errorf("file metadata is unavailable")
+		return Upload{}, unavailable("file metadata is unavailable")
 	}
 	return upload, nil
 }
@@ -349,10 +379,10 @@ func (s *Service) Delete(ctx context.Context, owner, id string) error {
 		return err
 	}
 	if r.Backend == "upstream" {
-		if !s.deletableUpstream(r.URL) {
+		if !s.deletableUpstream(id, r.URL) {
 			return fmt.Errorf("upstream filehost does not advertise a deletion protocol")
 		}
-		if err = s.deleteRemote(ctx, s.creds(), owner, r.NetworkID, r.URL); err != nil {
+		if err = s.deleteRemote(ctx, s.creds(), owner, r.NetworkID, id, r.URL); err != nil {
 			return err
 		}
 		_, err = s.options.Store.DB.Exec("DELETE FROM files WHERE owner=? AND id=?", owner, id)
@@ -455,7 +485,7 @@ func (s *Service) AvatarProvider() Provider {
 func (s *Service) DeletableUpload(owner, value string) string {
 	var id, backend string
 	err := s.options.Store.DB.QueryRow("SELECT f.id,f.backend FROM file_metadata m JOIN files f ON f.id=m.id WHERE f.owner=? AND f.deleted=0 AND json_extract(m.payload,'$.url')=? LIMIT 1", owner, value).Scan(&id, &backend)
-	if err != nil || backend == "upstream" && !s.deletableUpstream(value) || backend != "upstream" && s.blob(backend) == nil {
+	if err != nil || backend == "upstream" && !s.deletableUpstream(id, value) || backend != "upstream" && s.blob(backend) == nil {
 		return ""
 	}
 	return id

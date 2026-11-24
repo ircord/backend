@@ -694,9 +694,9 @@ func (s *Service) Close() {
 	}
 }
 
-// ClientIP is the address of the request's client, with the same trust in
-// proxies that limits sign-in attempts.
-func (s *Service) ClientIP(r *http.Request) string { return s.clientIP(r) }
+// ClientLimitKey is the part of the client's address that limits count against:
+// the address itself, or for IPv6 its /64, which one client usually holds whole.
+func (s *Service) ClientLimitKey(r *http.Request) string { return limitKey(s.clientIP(r)) }
 
 func (s *Service) clientIP(r *http.Request) string {
 	ip, _ := s.resolvedClientIP(r)

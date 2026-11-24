@@ -1,8 +1,12 @@
 package app
 
 import (
+	"context"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 func policyEnv(values map[string]string) func(string) string {
@@ -27,5 +31,28 @@ func TestFileHostPolicySettings(t *testing.T) {
 		if _, err = parseFileHostPolicy(policyEnv(map[string]string{name: value})); err == nil {
 			t.Fatalf("%s=%s accepted", name, value)
 		}
+	}
+}
+
+// Serving the file host takes an IRC login for the account of the same name, which is only the
+// same person when accounts are linked to the IRC server.
+func TestFileHostNeedsLinkedAccounts(t *testing.T) {
+	for name, settings := range map[string]map[string]string{
+		"without Ergo":                    {"IRCORD_FILEHOST_SERVE": "true"},
+		"with Ergo accounts switched off": {"IRCORD_FILEHOST_SERVE": "true", "IRCORD_ERGO_ACCOUNTS": "false", "IRCORD_ERGO_SERVER": "irc.example.com:6697", "IRCORD_ERGO_API_URL": "https://127.0.0.1:1", "IRCORD_ERGO_API_TOKEN": strings.Repeat("ab", 32)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cleanEnvironment(t)
+			t.Setenv("IRCORD_DATA_DIR", filepath.Join(t.TempDir(), "state"))
+			for k, v := range settings {
+				t.Setenv(k, v)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			err := Run(ctx)
+			if err == nil || !strings.Contains(err.Error(), "IRCORD_FILEHOST_SERVE") {
+				t.Fatalf("started, or failed for another reason: %v", err)
+			}
+		})
 	}
 }

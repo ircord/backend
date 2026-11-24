@@ -203,7 +203,8 @@ func (s *Service) SweepUnused(ctx context.Context, grace time.Duration) (int, er
 	args = append(args, now.Add(-grace).UnixNano(), now.UnixNano(), SweepBatch)
 	rows, err := s.options.Store.DB.QueryContext(ctx, `SELECT f.id,f.owner,f.backend,f.object_key,f.deleted FROM files f
 		WHERE f.backend IN (?`+strings.Repeat(",?", len(backends)-1)+`) AND (f.deleted=1 OR f.created_ns<? AND NOT `+currentUse+`)
-		ORDER BY f.deleted DESC,f.created_ns LIMIT ?`, args...)
+		AND (f.backend!='upstream' OR f.deleted=1 OR EXISTS(SELECT 1 FROM file_remote r WHERE r.id=f.id AND r.can_delete=1))
+		ORDER BY f.backend='upstream',f.deleted DESC,f.created_ns LIMIT ?`, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -240,8 +241,12 @@ func (s *Service) SweepUnused(ctx context.Context, grace time.Duration) (int, er
 				failed = append(failed, fmt.Errorf("check file %s: %w", v.id, err))
 				continue
 			}
-			if !v.deleted && !s.deletableUpstream(raw) {
-				// Its host cannot be asked to delete it; leave it visible and untouched.
+			if !v.deleted && !s.deletableUpstream(v.id, raw) {
+				// Its host is no longer trusted to delete it. Leave it as it is, and
+				// as in use, so that it does not take up the next sweeps' batches.
+				if _, err = s.options.Store.DB.ExecContext(ctx, "INSERT INTO file_uses(id,expires_ns) VALUES(?,0) ON CONFLICT(id) DO NOTHING", v.id); err != nil {
+					failed = append(failed, fmt.Errorf("keep file %s: %w", v.id, err))
+				}
 				continue
 			}
 			needle = upstreamNeedle(raw, needle)

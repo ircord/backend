@@ -49,8 +49,10 @@ func Run(ctx context.Context) error {
 	if associated != nil {
 		defer associated.Close()
 	}
-	if cfg.fileHost.serve && associated == nil {
-		return fmt.Errorf("IRCORD_FILEHOST_SERVE needs the associated Ergo server, which checks the passwords")
+	if cfg.fileHost.serve && (associated == nil || os.Getenv("IRCORD_ERGO_ACCOUNTS") == "false") {
+		// The file host takes an IRC login for the account of the same name here, which is
+		// the same person only when this server's accounts are the IRC server's accounts.
+		return fmt.Errorf("IRCORD_FILEHOST_SERVE needs the associated Ergo server, which checks the passwords, with IRCORD_ERGO_ACCOUNTS not set to false")
 	}
 	dataDir := cfg.dataDir
 	store, err := storage.Open(dataDir)
@@ -190,9 +192,14 @@ func Run(ctx context.Context) error {
 			return err
 		}
 		router.Forget(owner)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Each file on a network's file host is a request of its own.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		return files.DeleteAccountUsing(ctx, owner, logins)
+		if err := files.DeleteAccountUsing(ctx, owner, logins); err != nil {
+			return err
+		}
+		manager.ForgetFilehostLogins(owner)
+		return nil
 	}
 	authOptions.SessionEnded = router.EndSession
 	authOptions.SignedOut = manager.SignOut
