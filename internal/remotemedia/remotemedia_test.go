@@ -3,6 +3,7 @@ package remotemedia
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/gif"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"ircord/backend/internal/mediafetch"
 	"ircord/backend/internal/model"
 	"ircord/backend/internal/storage"
 )
@@ -248,6 +250,20 @@ func TestOpenRefusesRedirects(t *testing.T) {
 func TestOpenRefusesPrivateDestinations(t *testing.T) {
 	f := newFixture(t, func(o *Options) { o.Client = nil }) // the default client
 	f.serve(serveBytes("image/png", pngBytes(t, 8, 1)))
+	// The refusal itself, not just a failed fetch: a certificate or connection error would also end in 404.
+	for address, want := range map[string]error{
+		"https://127.0.0.1/a.png":                  mediafetch.ErrPrivateDestination,
+		"https://[::1]/a.png":                      mediafetch.ErrPrivateDestination,
+		"https://10.0.0.5/a.png":                   mediafetch.ErrPrivateDestination,
+		"https://169.254.169.254/latest/meta-data": mediafetch.ErrPrivateDestination,
+		"https://localhost/a.png":                  mediafetch.ErrPrivateDestination,
+		f.server.URL + "/a.png":                    mediafetch.ErrInvalidDestination, // a port other than 443
+		"https://127.0.0.1:8443/a.png":             mediafetch.ErrInvalidDestination,
+	} {
+		if _, _, err := f.svc.fetch(context.Background(), model.PictureAvatar, address); !errors.Is(err, want) {
+			t.Fatalf("fetch %s: %v, want %v", address, err, want)
+		}
+	}
 	for _, address := range []string{f.server.URL + "/a.png", "https://127.0.0.1/a.png", "https://169.254.169.254/latest/meta-data", "https://10.0.0.5/a.png", "https://[::1]/a.png"} {
 		src := f.svc.Src(model.PictureAvatar, address)
 		if src == "" {
@@ -414,5 +430,35 @@ func TestRequestCarriesNoIdentity(t *testing.T) {
 	})
 	if _, _, err := f.open(f.key(t, model.PictureAvatar, "/a.png")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOpenDropsCopyDeletedAtSource(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+		f := newFixture(t, nil)
+		f.serve(serveBytes("image/png", pngBytes(t, 8, 1)))
+		key := f.key(t, model.PictureAvatar, "/a.png")
+		if _, _, err := f.open(key); err != nil {
+			t.Fatal(err)
+		}
+		f.advance(25 * time.Hour)
+		f.serve(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "deleted", status) })
+		if _, _, err := f.open(key); err != ErrNotFound {
+			t.Fatalf("status %d: a deleted picture was still served: %v", status, err)
+		}
+		if files, _ := os.ReadDir(f.dir); len(files) != 0 {
+			t.Fatalf("status %d: %d files kept", status, len(files))
+		}
+		// Later requests do not bring it back, and the source is not asked again at once.
+		hits := f.hits.Load()
+		if _, _, err := f.open(key); err != ErrNotFound || f.hits.Load() != hits {
+			t.Fatalf("status %d: %v after %d extra fetches", status, err, f.hits.Load()-hits)
+		}
+		// If the source has the picture again, it is fetched again after the failure time.
+		f.advance(2 * time.Hour)
+		f.serve(serveBytes("image/png", pngBytes(t, 8, 1)))
+		if _, _, err := f.open(key); err != nil {
+			t.Fatalf("status %d: a restored picture was not fetched: %v", status, err)
+		}
 	}
 }

@@ -51,6 +51,7 @@ var (
 	errType     = errors.New("remote picture is not a PNG, JPEG, WebP or GIF image")
 	errSize     = errors.New("remote picture is too large")
 	errRedirect = errors.New("remote picture redirects")
+	errGone     = errors.New("remote picture was deleted at its source")
 )
 
 type Options struct {
@@ -246,7 +247,18 @@ func (s *Service) refresh(e entry) error {
 	}
 	data, contentType, err := s.fetch(ctx, e.kind, e.url)
 	now := s.options.Now().UnixNano()
+	if errors.Is(err, errGone) {
+		// The source deleted the picture, so the copy must not outlive it.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		_, _ = s.options.DB.Exec("UPDATE remote_media SET sha='',content_type='',size=0,fetched_ns=0,expires_ns=0,failed_ns=? WHERE key=?", now, e.key)
+		if e.sha != "" {
+			s.release(e.sha)
+		}
+		return err
+	}
 	if err != nil {
+		// A transport error or server failure keeps the copy already held.
 		_, _ = s.options.DB.Exec("UPDATE remote_media SET failed_ns=? WHERE key=?", now, e.key)
 		return err
 	}
@@ -342,6 +354,8 @@ func (s *Service) fetch(ctx context.Context, kind, address string) ([]byte, stri
 	switch {
 	case resp.StatusCode >= 300 && resp.StatusCode < 400:
 		return nil, "", errRedirect
+	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone:
+		return nil, "", errGone
 	case resp.StatusCode != http.StatusOK:
 		return nil, "", fmt.Errorf("remote picture status %d", resp.StatusCode)
 	}
