@@ -82,10 +82,16 @@ type MultilineLimits struct {
 	MaxLines int `json:"maxLines" minimum:"1" maximum:"100"`
 }
 type Capabilities struct {
+	Voice      bool                  `json:"voice,omitempty" doc:"This instance supports server-wide voice rooms for signed-in accounts."`
 	Parties    *PartyCapability      `json:"parties,omitempty" doc:"Application party service availability for this account; distinct from IRC network features."`
 	Upload     *UploadCapability     `json:"upload,omitempty" doc:"Application upload service availability and limits; distinct from IRC network features."`
 	Moderation *ModerationCapability `json:"moderation,omitempty" doc:"Present when the signed-in account is a server owner who can delete other people's channel messages and mark bots on one network."`
 	Themes     *ThemeCapability      `json:"themes,omitempty" doc:"What personal themes may do on this instance. Absent from older backends, which allow everything."`
+}
+
+type VoiceRosterEvent struct {
+	V    int    `json:"v" enum:"1"`
+	Type string `json:"type" enum:"voice.updated"`
 }
 
 // ThemeCapability carries the operator's choices for personal themes.

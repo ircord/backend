@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### New
+
+- Signed-in accounts can join server-wide voice channels.
+- Server owners can create, edit, and delete voice rooms without restarting the server.
+
+### Improved
+
+- Configure voice channels with audio bitrates up to 192 kbps.
+
 ## v0.7.6 — 2026-11-21
 
 ### Fixed

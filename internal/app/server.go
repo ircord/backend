@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"ircord/backend/internal/model"
 	"ircord/backend/internal/push"
 	"ircord/backend/internal/storage"
+	"ircord/backend/internal/voice"
 )
 
 func Run(ctx context.Context) error {
@@ -201,6 +203,19 @@ func Run(ctx context.Context) error {
 	}
 	router.Start()
 	defer router.Close()
+	voiceRooms, err := voice.New(cfg.voice, publicURL, manager.NotifyVoiceRoster, store.SessionActive)
+	if err != nil {
+		return err
+	}
+	if voiceRooms != nil {
+		var legacyScope string
+		if home := ircOptions.Home; home.ID != "" {
+			legacyScope = fmt.Sprintf("%s:%d/%t", strings.ToLower(home.Host), home.Port, home.TLS)
+		}
+		if err := voiceRooms.OpenCatalog(ctx, store, legacyScope); err != nil {
+			return fmt.Errorf("open voice channel catalog: %w", err)
+		}
+	}
 	if err := sessions.RecoverCredentials(ctx); err != nil {
 		slog.Error("Credential recovery will retry", "error", err)
 	}
@@ -223,10 +238,15 @@ func Run(ctx context.Context) error {
 			}
 		}
 	}()
-	app := api.New(manager, api.Options{Media: cfg.media, Store: store, Files: files, Emotes: catalog, DisableCustomCSS: !cfg.customCSS, Push: pushes, Activity: router, Auth: sessions, Origins: cfg.origins, Admin: verifier, Build: buildinfo.Current(), Ergo: associated, PublicURL: publicURL.String()})
+	app := api.New(manager, api.Options{Media: cfg.media, Store: store, Files: files, Emotes: catalog, DisableCustomCSS: !cfg.customCSS, Push: pushes, Activity: router, Auth: sessions, Origins: cfg.origins, Admin: verifier, Build: buildinfo.Current(), Ergo: associated, PublicURL: publicURL.String(), Voice: voiceRooms})
 	server := &http.Server{Addr: cfg.listen, Handler: app.Handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 90 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32768}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
+	if voiceRooms != nil {
+		voiceDone := make(chan struct{})
+		go func() { defer close(voiceDone); voiceRooms.Run(ctx) }()
+		defer func() { stop(); <-voiceDone }()
+	}
 	cleanupDone := make(chan struct{})
 	backfillDone := make(chan struct{})
 	defer func() { stop(); <-backfillDone }()

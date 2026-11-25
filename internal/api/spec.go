@@ -139,8 +139,8 @@ func (s *Server) finalizeSpec() {
 	registry.Map()["DurableEvent"] = &huma.Schema{OneOf: durable}
 	registry.Map()["Event"] = &huma.Schema{OneOf: durable}
 	all := append([]*huma.Schema{}, durable...)
-	all = append(all, schema(sessionReady{}, "SessionReady"), schema(sessionResync{}, "SessionResync"), schema(sessionSynced{}, "SessionSynced"), schema(commandError{}, "CommandError"), schema(model.TypingEvent{}, "TypingEvent"), schema(model.AttractEvent{}, "AttractEvent"), schema(emotesUpdatedEvent{}, "EmotesUpdatedEvent"), schema(devicesUpdatedEvent{}, "DevicesUpdatedEvent"), schema(notificationAlertEvent{}, "NotificationAlertEvent"), schema(notificationRoutingEvent{}, "NotificationRoutingEvent"))
-	for _, name := range []string{"SessionReady", "SessionResync", "SessionSynced", "CommandError", "TypingEvent", "AttractEvent", "EmotesUpdatedEvent", "DevicesUpdatedEvent", "NotificationAlertEvent", "NotificationRoutingEvent"} {
+	all = append(all, schema(sessionReady{}, "SessionReady"), schema(sessionResync{}, "SessionResync"), schema(sessionSynced{}, "SessionSynced"), schema(commandError{}, "CommandError"), schema(model.TypingEvent{}, "TypingEvent"), schema(model.AttractEvent{}, "AttractEvent"), schema(model.VoiceRosterEvent{}, "VoiceRosterEvent"), schema(emotesUpdatedEvent{}, "EmotesUpdatedEvent"), schema(devicesUpdatedEvent{}, "DevicesUpdatedEvent"), schema(notificationAlertEvent{}, "NotificationAlertEvent"), schema(notificationRoutingEvent{}, "NotificationRoutingEvent"))
+	for _, name := range []string{"SessionReady", "SessionResync", "SessionSynced", "CommandError", "TypingEvent", "AttractEvent", "VoiceRosterEvent", "EmotesUpdatedEvent", "DevicesUpdatedEvent", "NotificationAlertEvent", "NotificationRoutingEvent"} {
 		tag := registry.Map()[name].Properties["type"].Enum[0].(string)
 		discriminators[tag] = "#/components/schemas/" + name
 	}

@@ -24,6 +24,7 @@ import (
 	"ircord/backend/internal/model"
 	"ircord/backend/internal/push"
 	"ircord/backend/internal/storage"
+	"ircord/backend/internal/voice"
 )
 
 type Identity func(http.ResponseWriter, *http.Request) (string, error)
@@ -42,6 +43,7 @@ type Options struct {
 	Store    *storage.Store
 	Identity Identity
 	Origins  []string
+	Voice    *voice.Service
 	// DisableCustomCSS stops personal themes from applying their custom CSS on this instance.
 	DisableCustomCSS bool
 }
@@ -115,6 +117,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	s.registerSearch()
 	s.registerProfile()
 	s.registerEvents(router)
+	s.registerVoice(router)
 	s.registerOffline(router)
 	router.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if s.options.Store != nil && s.options.Store.DB.PingContext(r.Context()) != nil {
@@ -140,6 +143,7 @@ func New(manager *irc.Manager, options Options) *Server {
 
 func (s *Server) capabilities(accountID string) model.Capabilities {
 	capabilities := model.Capabilities{
+		Voice:      s.options.Voice != nil,
 		Themes:     &model.ThemeCapability{CustomCSS: !s.options.DisableCustomCSS},
 		Parties:    s.Manager.PartyCapability(accountID),
 		Moderation: s.Manager.ModerationCapability(accountID),

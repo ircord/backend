@@ -17,6 +17,7 @@ import (
 	"ircord/backend/internal/filehost"
 	"ircord/backend/internal/irc"
 	"ircord/backend/internal/linkmedia"
+	"ircord/backend/internal/voice"
 )
 
 type config struct {
@@ -31,6 +32,7 @@ type config struct {
 	pushSubject     string
 	webPush         bool
 	uploads         uploadLimits
+	voice           voice.Config
 }
 
 // uploadLimits is the operator's policy for stored uploads.
@@ -127,6 +129,10 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("IRCORD_PUBLIC_URL must be an HTTP(S) URL without credentials")
 	}
 	c.publicURL = publicURL
+	c.voice = voice.Config{
+		URL: os.Getenv("IRCORD_VOICE_URL"), Key: os.Getenv("IRCORD_VOICE_API_KEY"),
+		Secret: os.Getenv("IRCORD_VOICE_API_SECRET"), Channels: os.Getenv("IRCORD_VOICE_CHANNELS"),
+	}
 	switch env("IRCORD_FILE_STORAGE", "local") {
 	case "local":
 		c.blob = filehost.Local{Root: filepath.Join(c.dataDir, "uploads")}
