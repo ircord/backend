@@ -19,6 +19,8 @@ const (
 	ResetFailed    = "failed"
 )
 
+const resetRecoveryDetail = " The backend makes up to three automatic attempts."
+
 // PasswordReset is an operator's new password for an existing account. Its length is checked
 // by PasswordProblem rather than the schema, so a rejection is readable and audited; the
 // request body limit bounds it.
@@ -29,7 +31,7 @@ type PasswordReset struct {
 // PasswordResetResult reports an operator reset. It never contains credential material.
 type PasswordResetResult struct {
 	Username        string `json:"username" doc:"The account's username, as stored."`
-	Status          string `json:"status" enum:"completed,pending" doc:"completed: IRCord, the associated IRC server and the saved IRC login all use the new password. pending: the reset is saved and the backend keeps retrying the remaining steps; sign-in stays blocked until they finish."`
+	Status          string `json:"status" enum:"completed,pending" doc:"A completed reset updates the password in IRCord, the associated IRC server, and the saved IRC login. A pending reset gets up to three automatic attempts. Sign-in stays blocked until the reset finishes."`
 	SessionsRevoked int    `json:"sessionsRevoked" minimum:"0" doc:"Signed-in IRCord sessions that this reset signed out."`
 	Associated      bool   `json:"associated" doc:"Whether the account also has an account on the associated IRC server that the reset changes."`
 	Detail          string `json:"detail,omitempty" doc:"Why a reset is still pending."`
@@ -83,7 +85,7 @@ func (s *Service) ResetPassword(ctx context.Context, username string, in Passwor
 	result := PasswordResetResult{Username: account.Username, Status: ResetCompleted, Associated: s.options.Accounts != nil}
 	if result.SessionsRevoked, err = s.revokeAll(account.ID); err != nil {
 		// The saved intent still revokes every session when it finishes.
-		result.Status, result.Detail = ResetPending, "Signing out existing sessions failed; the backend retries the reset."
+		result.Status, result.Detail = ResetPending, "Signing out existing sessions failed."+resetRecoveryDetail
 		s.audit(account.Username, ResetPending)
 		return result, nil
 	}
@@ -98,9 +100,9 @@ func (s *Service) ResetPassword(ctx context.Context, username string, in Passwor
 		// account keeps its current password.
 		return PasswordResetResult{}, err
 	case errors.Is(err, ErrNetworkUnavailable):
-		result.Detail = "The associated IRC server couldn’t be reached; the backend keeps retrying."
+		result.Detail = "The associated IRC server couldn’t be reached." + resetRecoveryDetail
 	default:
-		result.Detail = "Saving the new password didn’t finish; the backend keeps retrying."
+		result.Detail = "Saving the new password didn’t finish." + resetRecoveryDetail
 	}
 	result.Status = ResetPending
 	s.audit(account.Username, ResetPending)

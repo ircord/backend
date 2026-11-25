@@ -299,7 +299,8 @@ func (s *Service) Login(w http.ResponseWriter, r *http.Request, in Credentials) 
 	if op, err := s.loadOperation(username); err != nil {
 		return LoginResult{}, ErrUnavailable
 	} else if op != nil {
-		if op.Kind == "signup" && !verifyPassword(in.Password, op.Hash) {
+		// A paused operation can be retried by signing in with its intended password.
+		if (op.Kind == "signup" || op.RecoveryAttempts >= maxCredentialRecoveryAttempts) && !verifyPassword(in.Password, op.Hash) {
 			slog.Info("Sign-in failed", "client", s.logClient(s.clientIP(r)))
 			return LoginResult{}, ErrUnauthorized
 		}

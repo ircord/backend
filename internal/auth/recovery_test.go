@@ -83,6 +83,54 @@ func TestPasswordRecoveryRetriesSavedLoginAndRevokesSessions(t *testing.T) {
 	}
 }
 
+func TestCredentialRecoveryStopsAfterThreeAttemptsAcrossRestarts(t *testing.T) {
+	s, store, fake, _ := accountsService(t)
+	signIn(t, s, "alice", "original-password", true)
+	fake.down = true
+	if result, err := s.ResetPassword(t.Context(), "alice", PasswordReset{Password: "replacement-password"}); err != nil || result.Status != ResetPending {
+		t.Fatalf("password reset was not saved for recovery: %+v, %v", result, err)
+	}
+	// Model a response lost after the associated server accepted the new password.
+	fake.accounts["alice"] = "replacement-password"
+	if _, err := s.Signup(httptest.NewRecorder(), httptest.NewRequest("POST", "/", nil), SignupCredentials{Username: "bob", Password: "signup-password"}); !errors.Is(err, ErrNetworkUnavailable) {
+		t.Fatalf("signup was not saved for recovery: %v", err)
+	}
+	registerCalls, setPasswordCalls := fake.registerCalls, fake.setPasswordCalls
+	for i := 1; i <= 4; i++ {
+		// Load the retry budget from storage every time, as a new process would.
+		restarted := New(store, s.options)
+		err := restarted.RecoverCredentials(t.Context())
+		restarted.Close()
+		switch {
+		case i <= 3 && !errors.Is(err, ErrNetworkUnavailable):
+			t.Fatalf("recovery pass %d did not report the unavailable server: %v", i, err)
+		case i == 3 && strings.Count(err.Error(), "stopped after 3 attempts") != 2:
+			t.Fatalf("the final attempt did not report that each operation stopped: %v", err)
+		case i == 4 && err != nil:
+			t.Fatalf("exhausted operations still reported a failure: %v", err)
+		}
+		if fake.registerCalls != registerCalls+min(i, 3) || fake.setPasswordCalls != setPasswordCalls+min(i, 3) {
+			t.Fatalf("recovery pass %d did not respect each operation's attempt limit", i)
+		}
+	}
+	fake.down = false
+	if err := s.RecoverCredentials(t.Context()); err != nil || fake.registerCalls != registerCalls+3 || fake.setPasswordCalls != setPasswordCalls+3 {
+		t.Fatalf("recovery retried exhausted operations when the server returned: %v", err)
+	}
+	if err := login(s, "alice", "original-password"); !errors.Is(err, ErrUnauthorized) || fake.setPasswordCalls != setPasswordCalls+3 {
+		t.Fatalf("an incorrect password triggered a paused reset: %v", err)
+	}
+	if err := login(s, "alice", "replacement-password"); err != nil {
+		t.Fatalf("sign-in could not finish the paused reset: %v", err)
+	}
+	if err := login(s, "bob", "signup-password"); err != nil {
+		t.Fatalf("sign-in could not finish the paused signup: %v", err)
+	}
+	if ops, err := store.CredentialOperations(); err != nil || len(ops) != 0 {
+		t.Fatalf("completed operations stayed in the queue: %d, %v", len(ops), err)
+	}
+}
+
 func TestConcurrentPasswordChangesUseCurrentPasswordAndSession(t *testing.T) {
 	s, _, fake, _ := accountsService(t)
 	w := httptest.NewRecorder()

@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
 	"ircord/backend/internal/ergo"
 	"ircord/backend/internal/storage"
 )
+
+const maxCredentialRecoveryAttempts = 3
 
 type credentialOperation struct {
 	Kind, Owner, Username, Hash, Password, DisplayName, KeepSession string
@@ -18,6 +21,9 @@ type credentialOperation struct {
 	OnboardingNetworkID string `json:",omitempty"`
 	// Reset marks an operator reset, so finishing it later is audited too.
 	Reset bool `json:",omitempty"`
+	// Keep the automatic retry budget across restarts. Foreground requests can
+	// still finish the intent without restarting automatic recovery.
+	RecoveryAttempts int `json:",omitempty"`
 }
 
 // The backend holds an exclusive data-directory lock. Fixed stripes serialize the
@@ -37,13 +43,12 @@ func (s *Service) saveOperation(op *credentialOperation) error {
 	return s.store.SaveCredentialOperation(strings.ToLower(op.Username), raw)
 }
 func (s *Service) loadOperation(username string) (*credentialOperation, error) {
-	ops, err := s.store.CredentialOperations()
+	raw, err := s.store.CredentialOperation(strings.ToLower(username))
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
-	}
-	raw := ops[strings.ToLower(username)]
-	if raw == nil {
-		return nil, nil
 	}
 	var op credentialOperation
 	if err := json.Unmarshal(raw, &op); err != nil {
@@ -175,22 +180,48 @@ func (s *Service) dropOperation(op *credentialOperation) error {
 }
 
 // RecoverCredentials retries durable operations at startup and during maintenance.
-// An unavailable upstream leaves the encrypted intent available for a later retry.
+// Exhausted operations remain available for explicit recovery because Ergo may have
+// applied a change before a request failed.
 func (s *Service) RecoverCredentials(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ops, err := s.store.CredentialOperations()
 	if err != nil {
 		return ErrUnavailable
 	}
 	var result error
 	for username := range ops {
-		lock := s.credentialLock(username)
-		lock.Lock()
-		op, err := s.loadOperation(username)
-		if err == nil && op != nil {
-			err = s.finishOperation(ctx, op)
+		if ctx.Err() != nil {
+			return errors.Join(result, ctx.Err())
 		}
-		lock.Unlock()
-		result = errors.Join(result, err)
+		result = errors.Join(result, s.recoverOperation(ctx, username))
 	}
 	return errors.Join(result, s.unregisterRetired(ctx))
+}
+
+func (s *Service) recoverOperation(ctx context.Context, username string) error {
+	lock := s.credentialLock(username)
+	lock.Lock()
+	defer lock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	op, err := s.loadOperation(username)
+	if err != nil || op == nil || op.RecoveryAttempts >= maxCredentialRecoveryAttempts {
+		return err
+	}
+	// Reserve the attempt before contacting Ergo so a process restart cannot
+	// repeat an attempt whose outcome was lost or restore its retry budget.
+	op.RecoveryAttempts++
+	if err = s.saveOperation(op); err != nil {
+		return ErrUnavailable
+	}
+	if err = s.finishOperation(ctx, op); err == nil {
+		return nil
+	}
+	if op.RecoveryAttempts == maxCredentialRecoveryAttempts {
+		return fmt.Errorf("automatic credential recovery stopped after %d attempts: %w", op.RecoveryAttempts, err)
+	}
+	return fmt.Errorf("credential recovery attempt %d of %d failed: %w", op.RecoveryAttempts, maxCredentialRecoveryAttempts, err)
 }

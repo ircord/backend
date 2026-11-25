@@ -228,32 +228,32 @@ func Run(ctx context.Context) error {
 	}
 	router.Start()
 	defer router.Close()
-	if err := sessions.RecoverCredentials(ctx); err != nil {
-		slog.Error("Credential recovery will retry", "error", err)
-	}
-	recoveryCtx, stopRecovery := context.WithCancel(ctx)
-	defer stopRecovery()
-	recoveryDone := make(chan struct{})
-	defer func() { stopRecovery(); <-recoveryDone }()
-	go func() {
-		defer close(recoveryDone)
-		tick := time.NewTicker(30 * time.Second)
-		defer tick.Stop()
-		for {
-			select {
-			case <-recoveryCtx.Done():
-				return
-			case <-tick.C:
-				if err := sessions.RecoverCredentials(recoveryCtx); err != nil {
-					slog.Error("Credential recovery will retry", "error", err)
-				}
-			}
-		}
-	}()
 	app := api.New(manager, api.Options{Media: cfg.media, Store: store, Files: files, Emotes: catalog, RemoteMedia: remote, DisableCustomCSS: !cfg.customCSS, Push: pushes, Activity: router, Auth: sessions, Origins: cfg.origins, Admin: verifier, Build: buildinfo.Current(), Ergo: associated, PublicURL: publicURL.String(), FileHost: api.FileHostOptions{Serve: cfg.fileHost.serve, Accounts: cfg.fileHost.accounts}, NetworkMessageUploads: cfg.fileHost.messageUploads == messageUploadsNetwork})
 	server := &http.Server{Addr: cfg.listen, Handler: app.Handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 90 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32768}
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
+	// A pending credential change can wait on Ergo even when IRCord is ready to serve.
+	recoveryDone := make(chan struct{})
+	defer func() { stop(); <-recoveryDone }()
+	go func() {
+		defer close(recoveryDone)
+		recoverCredentials := func() {
+			if err := sessions.RecoverCredentials(ctx); err != nil && ctx.Err() == nil {
+				slog.Error("Credential recovery failed", "error", err)
+			}
+		}
+		recoverCredentials()
+		tick := time.NewTicker(30 * time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				recoverCredentials()
+			}
+		}
+	}()
 	cleanupDone := make(chan struct{})
 	backfillDone := make(chan struct{})
 	defer func() { stop(); <-backfillDone }()

@@ -5,6 +5,8 @@
 ### Fixed
 
 - Removing an IRC network no longer stalls other accounts that are using IRCord.
+- IRCord starts while pending account changes wait for the associated IRC server.
+- IRCord stops retrying an unfinished signup or password change after three automatic attempts.
 
 ## v0.8.0 — 2026-11-24
 

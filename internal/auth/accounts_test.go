@@ -13,13 +13,15 @@ import (
 
 // fakeErgo stands in for the associated server's account API.
 type fakeErgo struct {
-	accounts map[string]string
-	down     bool
-	setErr   error // a definitive answer from SetPassword, such as ergo.ErrNotFound
-	retired  map[string]bool
+	accounts                        map[string]string
+	down                            bool
+	setErr                          error // a definitive answer from SetPassword, such as ergo.ErrNotFound
+	retired                         map[string]bool
+	registerCalls, setPasswordCalls int
 }
 
 func (f *fakeErgo) Register(_ context.Context, account, passphrase string) error {
+	f.registerCalls++
 	if f.down {
 		return errors.New("unreachable")
 	}
@@ -33,6 +35,7 @@ func (f *fakeErgo) Register(_ context.Context, account, passphrase string) error
 	return nil
 }
 func (f *fakeErgo) SetPassword(_ context.Context, account, passphrase string) error {
+	f.setPasswordCalls++
 	if f.down {
 		return errors.New("unreachable")
 	}

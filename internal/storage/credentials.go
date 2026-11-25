@@ -12,6 +12,19 @@ func (s *Store) SaveCredentialOperation(username string, raw []byte) error {
 	_, err := s.DB.Exec("INSERT INTO credential_operations(username,payload) VALUES(?,?) ON CONFLICT(username) DO UPDATE SET payload=excluded.payload", username, s.seal(username, "credentials", raw))
 	return err
 }
+
+func (s *Store) CredentialOperation(username string) ([]byte, error) {
+	var storedName string
+	var raw []byte
+	if err := s.DB.QueryRow("SELECT username,payload FROM credential_operations WHERE username=?", username).Scan(&storedName, &raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return s.open(storedName, "credentials", raw)
+}
+
 func (s *Store) CredentialOperations() (map[string][]byte, error) {
 	rows, err := s.DB.Query("SELECT username,payload FROM credential_operations")
 	if err != nil {
