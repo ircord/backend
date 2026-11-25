@@ -13,9 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"ircord/backend/internal/storage"
 )
 
 func TestReplayIsolationAndSlowConsumers(t *testing.T) {
@@ -63,43 +64,111 @@ func TestInputAndOwnership(t *testing.T) {
 		t.Fatalf("private destination accepted: %v", err)
 	}
 }
-func TestConcurrentDisconnectPreservesReplacement(t *testing.T) {
-	m := New(Options{})
+func TestRemoveNetworkWaitsForTeardownBeforeReconnect(t *testing.T) {
+	s := newStubServer(t, func(int) stubAttempt { return stubAttempt{welcome: true} })
+	store, err := storage.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err = store.CreateUser("owner", "alice", "hash"); err != nil {
+		t.Fatal(err)
+	}
+	m := New(Options{Store: store, AllowPrivate: true, MaxConnections: 1})
 	defer m.Close()
+	cfg := NetworkConfig{ID: "net", Name: "Test", Host: "127.0.0.1", Port: s.port(), Nick: "alice"}
+	if _, err = m.Connect("owner", cfg); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if err = m.WaitConnected(ctx, "owner", cfg.ID); err != nil {
+		t.Fatal(err)
+	}
+	c, err := m.connection("owner", cfg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Pause removal after the connection is canceled but before the network is deleted.
+	c.workers.Add(1)
+	release := sync.OnceFunc(c.workers.Done)
+	defer release()
+	removed := make(chan error, 1)
+	go func() { removed <- m.DeleteNetwork("owner", cfg.ID) }()
+	select {
+	case <-c.ctx.Done():
+	case <-ctx.Done():
+		t.Fatal("network removal did not cancel the connection")
+	}
 	w := m.space("owner")
-	secondArrived := make(chan struct{})
-	releaseSecond := make(chan struct{})
-	var calls atomic.Int32
-	done := make(chan struct{})
-	close(done)
-	old := &connection{owner: w, done: done, cancel: func() {
-		if calls.Add(1) == 1 {
-			<-secondArrived
-		} else {
-			close(secondArrived)
-			<-releaseSecond
-		}
-	}}
-	w.connections["net"] = old
-	results := make(chan error, 2)
-	go func() { results <- m.Disconnect("owner", "net") }()
-	go func() { results <- m.Disconnect("owner", "net") }()
-	if err := <-results; err != nil {
+	if w.configMu.TryLock() {
+		w.configMu.Unlock()
+		t.Error("network removal allowed another connection change during teardown")
+	}
+	if err = c.saveTargets(); !errors.Is(err, ErrDisconnected) {
+		t.Errorf("stopped connection could still enable the saved network: %v", err)
+	}
+	reconnected := make(chan error, 1)
+	go func() { reconnected <- m.Reconnect("owner", cfg.ID) }()
+	release()
+	if err = <-removed; err != nil {
 		t.Fatal(err)
 	}
-	replacement := &connection{}
-	w.mu.Lock()
-	w.connections["net"] = replacement
-	w.mu.Unlock()
-	close(releaseSecond)
-	if err := <-results; err != nil {
+	if err = <-reconnected; !errors.Is(err, ErrNotFound) {
+		t.Fatalf("reconnect did not see the completed removal: %v", err)
+	}
+	if saved, err := store.Networks("owner"); err != nil || len(saved) != 0 {
+		t.Fatalf("removed network remained in storage: %d saved, %v", len(saved), err)
+	}
+	cfg.ID = "replacement"
+	if _, err = m.Connect("owner", cfg); err != nil {
+		t.Fatalf("removal did not release the connection slot: %v", err)
+	}
+}
+
+func TestConnectionSetupWaitingForStorageLeavesOtherWorkspacesAvailable(t *testing.T) {
+	s := newStubServer(t, func(int) stubAttempt { return stubAttempt{welcome: true} })
+	store, err := storage.Open(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.connections["net"] != replacement {
-		t.Fatal("stale disconnect removed the new owner connection")
+	defer store.Close()
+	if _, err = store.CreateUser("alice", "alice", "hash"); err != nil {
+		t.Fatal(err)
 	}
+	m := New(Options{Store: store, AllowPrivate: true})
+	defer m.Close()
+	m.space("alice")
+	m.space("bob")
+	tx, err := store.DB.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	waits := store.DB.Stats().WaitCount
+	connected := make(chan error, 1)
+	go func() {
+		_, err := m.Connect("alice", NetworkConfig{ID: "net", Name: "Test", Host: "127.0.0.1", Port: s.port(), Nick: "alice"})
+		connected <- err
+	}()
+	eventually(t, func() bool { return store.DB.Stats().WaitCount > waits })
+	read := make(chan struct{})
+	go func() {
+		m.Snapshot("bob")
+		close(read)
+	}()
+	select {
+	case <-read:
+	case <-time.After(time.Second):
+		t.Error("connection setup blocked another account's workspace")
+	}
+	if err = tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err = <-connected; err != nil {
+		t.Fatal(err)
+	}
+	<-read
 }
 func ergo(t *testing.T) (string, int) {
 	t.Helper()

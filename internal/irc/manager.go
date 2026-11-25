@@ -108,13 +108,19 @@ func New(options Options) *Manager {
 }
 
 func (m *Manager) Connect(owner string, cfg NetworkConfig) (Network, error) {
-	return m.connect(owner, cfg, false)
+	if owner == "" || !clean(owner, 128) {
+		return Network{}, fmt.Errorf("owner is required")
+	}
+	w := m.space(owner)
+	w.configMu.Lock()
+	defer w.configMu.Unlock()
+	return m.connect(w, cfg, false)
 }
 
-// connect starts a network connection. A restored network was working or
-// reconnecting when the backend last stopped, so a failed first attempt retries
-// instead of stopping.
-func (m *Manager) connect(owner string, cfg NetworkConfig, restored bool) (Network, error) {
+// connect starts a network connection with w.configMu held. A previously working
+// network restored at startup retries even when its first connection attempt fails.
+func (m *Manager) connect(w *workspace, cfg NetworkConfig, restored bool) (Network, error) {
+	owner := w.ownerID
 	cfg = m.configuredPassword(cfg)
 	var normalizeErr error
 	cfg, normalizeErr = normalizeConfig(cfg)
@@ -123,9 +129,6 @@ func (m *Manager) connect(owner string, cfg NetworkConfig, restored bool) (Netwo
 	}
 	if err := m.validatePartyConfig(owner, cfg); err != nil {
 		return Network{}, err
-	}
-	if owner == "" || !clean(owner, 128) {
-		return Network{}, fmt.Errorf("owner is required")
 	}
 	if cfg.Port < 1 || cfg.Port > 65535 || cfg.Host == "" || !clean(cfg.Host, 253) || strings.ContainsAny(cfg.Host, " /\\") || !girc.IsValidNick(cfg.Nick) || !clean(cfg.Name, 100) || !clean(cfg.SASLUser, 100) || !clean(cfg.SASLPassword, 512) || !clean(cfg.ServerPassword, 512) {
 		return Network{}, fmt.Errorf("invalid network configuration")
@@ -145,12 +148,6 @@ func (m *Manager) connect(owner string, cfg NetworkConfig, restored bool) (Netwo
 	if !token(cfg.ID, 100) {
 		return Network{}, fmt.Errorf("invalid network ID")
 	}
-	w := m.space(owner)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closed {
-		return Network{}, fmt.Errorf("manager is closed")
-	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if _, ok := w.connections[cfg.ID]; ok {
@@ -159,12 +156,22 @@ func (m *Manager) connect(owner string, cfg NetworkConfig, restored bool) (Netwo
 	if w.storageErr != nil {
 		return Network{}, ErrStorage
 	}
-	if w.deleted || m.deletedOwners[owner] {
+	if w.deleted {
 		return Network{}, ErrNotFound
 	}
-	if m.connectionCount >= m.options.MaxConnections || len(w.connections) >= 20 {
+	if len(w.connections) >= 20 {
 		return Network{}, ErrBusy
 	}
+	if err := m.reserveConnection(owner); err != nil {
+		return Network{}, err
+	}
+	defer m.wg.Done()
+	started := false
+	defer func() {
+		if !started {
+			m.releaseConnection()
+		}
+	}()
 	ctx, cancel := context.WithCancel(m.ctx)
 	c := &connection{restored: restored, serviceGate: make(chan struct{}, 1), serviceBatches: map[string]string{}, createdAt: time.Now(), manager: m, owner: w, config: cfg, ctx: ctx, cancel: cancel, queue: make(chan []*girc.Event, 64), pending: map[string]pending{}, batches: map[string]*multiline{}, historyBatches: map[string]bool{}, historyGate: make(chan struct{}, 1), historyRequests: map[string]*historyRequest{}, historyResponses: map[string]*historyRequest{}, batchLabels: map[string]string{}, catching: map[string]bool{}, modeListGate: make(chan struct{}, 1), listGate: make(chan struct{}, 1), closedTargets: map[string]bool{}, desired: map[string]string{}, roster: map[string]map[string]bool{}, arrivals: map[string]bool{}, nicks: map[string]string{}, caps: map[string]bool{}, done: make(chan struct{})}
 	c.metadataWake = make(chan struct{}, 1)
@@ -210,14 +217,42 @@ func (m *Manager) connect(owner string, cfg NetworkConfig, restored bool) (Netwo
 		cancel()
 		return Network{}, ErrStorage
 	}
-	m.connectionCount++
 	c.outboxWake = make(chan struct{}, 1)
-	c.workers.Add(1)
+	c.workers.Add(2)
 	m.wg.Add(3)
+	started = true
 	go c.run()
-	go c.writer()
+	go func() {
+		defer c.workers.Done()
+		c.writer()
+	}()
 	go c.runOutbox()
 	return clone(n), nil
+}
+
+// Reserve capacity and track setup so Close waits for it and the workers it starts.
+// Release the manager lock before doing any account storage work.
+func (m *Manager) reserveConnection(owner string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return fmt.Errorf("manager is closed")
+	}
+	if m.deletedOwners[owner] {
+		return ErrNotFound
+	}
+	if m.connectionCount >= m.options.MaxConnections {
+		return ErrBusy
+	}
+	m.connectionCount++
+	m.wg.Add(1)
+	return nil
+}
+
+func (m *Manager) releaseConnection() {
+	m.mu.Lock()
+	m.connectionCount--
+	m.mu.Unlock()
 }
 
 func (m *Manager) connection(owner, network string) (*connection, error) {
@@ -243,16 +278,19 @@ func (m *Manager) Reconnect(owner, network string) error {
 		return ErrNotFound
 	}
 	if active != nil {
-		if err := m.Disconnect(owner, network); err != nil {
+		if err := m.disconnect(w, network, false); err != nil {
 			return err
 		}
 	}
-	_, err := m.Connect(owner, cfg)
+	_, err := m.connect(w, cfg, false)
 	return err
 }
 
 func (m *Manager) Disconnect(owner, network string) error {
-	return m.disconnect(owner, network, false)
+	w := m.space(owner)
+	w.configMu.Lock()
+	defer w.configMu.Unlock()
+	return m.disconnect(w, network, false)
 }
 
 // SignOut turns off every network the owner has on, because they signed out of their last
@@ -279,7 +317,7 @@ func (m *Manager) SignOut(owner string) error {
 	sort.Strings(ids)
 	var errs []error
 	for _, id := range ids {
-		if err := m.disconnect(owner, id, true); err != nil && err != ErrNotFound {
+		if err := m.disconnect(w, id, true); err != nil && err != ErrNotFound {
 			errs = append(errs, fmt.Errorf("sign out of network %s: %w", id, err))
 		}
 	}
@@ -322,60 +360,60 @@ func (m *Manager) SignIn(owner string) error {
 		}
 		// Connect clears the mark once it succeeds; a failure, including a full connection
 		// pool, leaves it so the next sign-in tries again.
-		if _, err := m.Connect(owner, cfg); err != nil && err != ErrBusy {
+		if _, err := m.connect(w, cfg, false); err != nil && err != ErrBusy {
 			errs = append(errs, fmt.Errorf("reconnect network %s: %w", id, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (m *Manager) disconnect(owner, network string, signedOut bool) error {
-	c, err := m.connection(owner, network)
-	if err != nil {
-		return err
+// disconnect runs with w.configMu held.
+func (m *Manager) disconnect(w *workspace, network string, signedOut bool) error {
+	w.mu.Lock()
+	c := w.connections[network]
+	if c == nil || w.deleted {
+		w.mu.Unlock()
+		return ErrNotFound
 	}
-	c.mu.Lock()
-	c.ready = false
-	c.mu.Unlock()
-	if c.owner.store != nil {
-		c.owner.mu.Lock()
-		cfg := c.owner.configs[network]
-		c.owner.mu.Unlock()
-		save := func() error { return c.owner.store.SaveNetwork(owner, cfg, false) }
+	if w.store != nil {
+		var err error
 		if signedOut {
-			save = func() error { return c.owner.store.SignOutNetwork(owner, network) }
+			err = w.store.SignOutNetwork(w.ownerID, network)
+		} else {
+			err = w.store.SaveNetwork(w.ownerID, w.configs[network], false)
 		}
-		if err := save(); err != nil {
+		if err != nil {
+			w.mu.Unlock()
 			return ErrStorage
 		}
 	}
 	if signedOut {
-		c.owner.mu.Lock()
-		if c.owner.signedOut == nil {
-			c.owner.signedOut = map[string]bool{}
+		if w.signedOut == nil {
+			w.signedOut = map[string]bool{}
 		}
-		c.owner.signedOut[network] = true
-		c.owner.mu.Unlock()
+		w.signedOut[network] = true
 	}
+	c.mu.Lock()
+	c.ready = false
+	c.mu.Unlock()
 	c.cancel()
+	w.mu.Unlock()
 	c.closeTransport()
 	<-c.done
 	c.workers.Wait()
-	c.owner.mu.Lock()
-	removed := c.owner.connections[network] == c
+	w.mu.Lock()
+	removed := w.connections[network] == c
 	if removed {
-		n := c.owner.networks[network]
+		n := w.networks[network]
 		n.Status = "disconnected"
 		n.StatusDetail = ""
-		c.owner.networks[network] = n
-		c.owner.emit("network.updated", n)
-		delete(c.owner.connections, network)
+		w.networks[network] = n
+		w.emit("network.updated", n)
+		delete(w.connections, network)
 	}
-	c.owner.mu.Unlock()
+	w.mu.Unlock()
 	if removed {
-		m.mu.Lock()
-		m.connectionCount--
-		m.mu.Unlock()
+		m.releaseConnection()
 	}
 	return nil
 }
@@ -388,15 +426,19 @@ func (m *Manager) Close() {
 	}
 	m.closed = true
 	m.cancel()
-	var conns []*connection
+	spaces := make([]*workspace, 0, len(m.owners))
 	for _, w := range m.owners {
+		spaces = append(spaces, w)
+	}
+	m.mu.Unlock()
+	var conns []*connection
+	for _, w := range spaces {
 		w.mu.Lock()
 		for _, c := range w.connections {
 			conns = append(conns, c)
 		}
 		w.mu.Unlock()
 	}
-	m.mu.Unlock()
 	for _, c := range conns {
 		c.closeTransport()
 	}
@@ -404,8 +446,7 @@ func (m *Manager) Close() {
 		m.moderator.close()
 	}
 	m.wg.Wait()
-	m.mu.Lock()
-	for _, w := range m.owners {
+	for _, w := range spaces {
 		w.mu.Lock()
 		w.closeTraceSubscribers()
 		for ch := range w.subscribers {
@@ -414,7 +455,6 @@ func (m *Manager) Close() {
 		}
 		w.mu.Unlock()
 	}
-	m.mu.Unlock()
 }
 
 // WaitConnected is a convenience for integration tests and service startup.

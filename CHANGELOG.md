@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Removing an IRC network no longer stalls other accounts that are using IRCord.
+
 ## v0.8.0 — 2026-11-24
 
 ### New

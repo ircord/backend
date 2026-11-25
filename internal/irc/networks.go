@@ -218,16 +218,16 @@ func (m *Manager) updateNetwork(owner, network string, cfg NetworkConfig) (Netwo
 	}
 	missingSecret := normalized.Auth != nil && normalized.Auth.Method != "none" && (normalized.Auth.Password == nil || *normalized.Auth.Password == "")
 	if active && missingSecret {
-		if err = m.Disconnect(owner, network); err != nil {
+		if err = m.disconnect(w, network, false); err != nil {
 			return Network{}, err
 		}
 		active = false
 	}
 	if active {
-		if err = m.Disconnect(owner, network); err != nil {
+		if err = m.disconnect(w, network, false); err != nil {
 			return Network{}, err
 		}
-		return m.Connect(owner, normalized)
+		return m.connect(w, normalized, false)
 	}
 	if w.store != nil {
 		if err = w.store.SaveNetwork(owner, normalized, false); err != nil {
@@ -256,6 +256,8 @@ func (m *Manager) updateNetwork(owner, network string, cfg NetworkConfig) (Netwo
 }
 func (m *Manager) DeleteNetwork(owner, network string) error {
 	w := m.space(owner)
+	w.configMu.Lock()
+	defer w.configMu.Unlock()
 	w.mu.Lock()
 	_, ok := w.networks[network]
 	active := w.connections[network] != nil
@@ -264,7 +266,7 @@ func (m *Manager) DeleteNetwork(owner, network string) error {
 		return ErrNotFound
 	}
 	if active {
-		if err := m.Disconnect(owner, network); err != nil {
+		if err := m.disconnect(w, network, false); err != nil {
 			return err
 		}
 	}
@@ -291,6 +293,7 @@ func (m *Manager) DeleteNetwork(owner, network string) error {
 	}
 	delete(w.networks, network)
 	delete(w.configs, network)
+	delete(w.signedOut, network)
 	w.bumpProfileIncarnation(network)
 	delete(w.info, network)
 	delete(w.latency, network)
@@ -411,7 +414,7 @@ func (m *Manager) ProvisionHome(owner string, cfg NetworkConfig) error {
 	if err != nil {
 		return ErrStorage
 	}
-	_, err = m.Connect(owner, normalized)
+	_, err = m.connect(w, normalized, false)
 	if err == ErrBusy {
 		return nil
 	}

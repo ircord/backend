@@ -232,7 +232,9 @@ func (m *Manager) Restore() error {
 		// A network that was working or reconnecting when the backend stopped
 		// keeps retrying. One that had already failed gets a single attempt, so
 		// a wrong address is not dialled forever.
-		_, err = m.connect(n.Owner, n.Config, !failedBefore)
+		w.configMu.Lock()
+		_, err = m.connect(w, n.Config, !failedBefore)
+		w.configMu.Unlock()
 		switch {
 		case err == nil:
 		case errors.Is(err, ErrBusy):
@@ -295,6 +297,9 @@ func (c *connection) saveTargets() error {
 	defer w.mu.Unlock()
 	if w.deleted {
 		return ErrNotFound
+	}
+	if c.ctx.Err() != nil || w.connections[c.config.ID] != c {
+		return ErrDisconnected
 	}
 	cfg := clone(w.configs[c.config.ID])
 	c.mu.Lock()
