@@ -83,7 +83,8 @@ type Server struct {
 	offlineCache   *offlineCache
 	// emoteSlots bounds concurrent emote uploads and imports.
 	emoteSlots chan struct{}
-	hashField  hashFieldLimiter
+	hashField  scoreLimiter
+	ircoid     scoreLimiter
 	linkMedia  linkMediaCache
 	images     imagevariant.Cache
 	guideFacts guideFacts
@@ -127,6 +128,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	s.registerLinks()
 	s.registerInbox()
 	s.registerHashField()
+	s.registerIrcoid()
 	s.registerConnectionAPI(router)
 	s.registerFiles(router)
 	s.registerFileHost(router)

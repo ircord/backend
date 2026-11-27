@@ -31,12 +31,12 @@ func TestHashFieldScoresAreSharedValidatedAndRateLimited(t *testing.T) {
 		{"Alice", -10, "score"},
 		{"Alice", 105, "score"},
 		{"Alice", 10_000_010, "score"},
-		{"   ", 100, hashFieldNameLength},
-		{strings.Repeat("a", 25), 100, hashFieldNameLength},
-		{"bad\u0007bell", 100, hashFieldNameCharacters},
-		{"right\u202eleft", 100, hashFieldNameCharacters},
-		{"private\ue000use", 100, hashFieldNameCharacters},
-		{"non\uffffchar", 100, hashFieldNameCharacters},
+		{"   ", 100, scoreNameLength},
+		{strings.Repeat("a", 25), 100, scoreNameLength},
+		{"bad\u0007bell", 100, scoreNameCharacters},
+		{"right\u202eleft", 100, scoreNameCharacters},
+		{"private\ue000use", 100, scoreNameCharacters},
+		{"non\uffffchar", 100, scoreNameCharacters},
 	} {
 		body := request(t, alice, "POST", url, map[string]any{"name": bad.name, "score": bad.score}, 422)
 		if !strings.Contains(string(body), bad.detail) {
@@ -51,10 +51,10 @@ func TestHashFieldScoresAreSharedValidatedAndRateLimited(t *testing.T) {
 	}
 	// A lone surrogate (half an emoji) decodes to U+FFFD and is refused, not mistaken for a length.
 	lone := json.RawMessage(`{"name":"` + strings.Repeat("a", 23) + `\ud83d","score":100}`)
-	if body := request(t, alice, "POST", url, lone, 422); !strings.Contains(string(body), hashFieldNameCharacters) {
+	if body := request(t, alice, "POST", url, lone, 422); !strings.Contains(string(body), scoreNameCharacters) {
 		t.Fatalf("lone surrogate: unexpected problem %s", body)
 	}
-	if name, problem := hashFieldName("👨‍👩‍👧 " + strings.Repeat("é", 10)); problem != "" || name != "👨‍👩‍👧 "+strings.Repeat("é", 10) {
+	if name, problem := scoreName("👨‍👩‍👧 " + strings.Repeat("é", 10)); problem != "" || name != "👨‍👩‍👧 "+strings.Repeat("é", 10) {
 		t.Fatal("emoji sequences and accented letters are refused", problem)
 	}
 	// One account cannot submit again straight away.
@@ -70,22 +70,22 @@ func TestHashFieldScoresAreSharedValidatedAndRateLimited(t *testing.T) {
 }
 
 func TestHashFieldLimiterSpacesAndCapsSubmissions(t *testing.T) {
-	var l hashFieldLimiter
+	var l scoreLimiter
 	now := time.Unix(1_000_000, 0)
-	if !l.allow("a", now) || l.allow("a", now.Add(hashFieldGap-time.Second)) {
+	if !l.allow("a", now) || l.allow("a", now.Add(scoreGap-time.Second)) {
 		t.Fatal("submissions closer than the gap were allowed")
 	}
 	if !l.allow("b", now) {
 		t.Fatal("limits are not per account")
 	}
 	at := now
-	for i := 1; i < hashFieldHourly; i++ {
-		at = at.Add(hashFieldGap)
+	for i := 1; i < scoreHourly; i++ {
+		at = at.Add(scoreGap)
 		if !l.allow("a", at) {
 			t.Fatal("spaced submission refused", i)
 		}
 	}
-	if l.allow("a", at.Add(hashFieldGap)) {
+	if l.allow("a", at.Add(scoreGap)) {
 		t.Fatal("hourly cap not applied")
 	}
 	if !l.allow("a", now.Add(time.Hour+time.Second)) {
