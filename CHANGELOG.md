@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.8.2 — 2026-11-27
+
+### New
+
+- Servers keep an instance-wide high score table for the GPUI client's Ircoid game, seeded once on first start.
+
 ## v0.8.1 — 2026-11-25
 
 ### Fixed
