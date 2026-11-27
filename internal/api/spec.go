@@ -206,7 +206,7 @@ func apiTag(path string) string {
 	if strings.Contains(path, "/notifications") || strings.Contains(path, "/push") {
 		return "Notifications"
 	}
-	if strings.Contains(path, "/app-data") || strings.HasPrefix(path, "/api/v1/app/") || strings.Contains(path, "/hash-field") {
+	if strings.Contains(path, "/app-data") || strings.HasPrefix(path, "/api/v1/app/") || strings.Contains(path, "/hash-field") || strings.Contains(path, "/ircoid") {
 		return "App data"
 	}
 	if strings.Contains(path, "/networks") {
