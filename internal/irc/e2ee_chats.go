@@ -684,32 +684,42 @@ func (m *Manager) receiveWelcome(c *connection, ev handshakeEvent) {
 	if !m.net.allow(owner, "welcome "+ev.account, time.Now()) {
 		return
 	}
-	kind, target := storage.E2EEChatDirect, ev.nick
+	if !m.keepWelcome(owner, obj, ev.account, ev.nick, ev.transfer, ev.at, ev.msgid) {
+		return
+	}
+	receipt := receiptObject{Group: obj.Group}.encode()
+	_, _ = c.sendHandshake(kindReceipt, ev.transfer, []string{ev.nick}, receipt, false)
+}
+
+// keepWelcome stores a Welcome for every device of the account, filed under
+// its chat: an invitation for a chat the account does not have yet, or the
+// chat it already has. at and msgid are the Welcome's position.
+func (m *Manager) keepWelcome(owner string, obj welcomeObject, sender, nick, transfer string, at int64, msgid string) bool {
+	store := m.options.Store
+	kind, target := storage.E2EEChatDirect, nick
 	if obj.Kind == wireGroup {
 		kind, target = storage.E2EEChatGroup, obj.Channel
 	}
 	chat, err := store.E2EEChat(owner, obj.Group)
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
-		chat = storage.E2EEChat{Group: obj.Group, Kind: kind, State: storage.E2EEChatInvited, Target: target, Inviter: ev.account, Replaces: obj.Replaces, Epoch: obj.Epoch, Transfer: ev.transfer}
+		chat = storage.E2EEChat{Group: obj.Group, Kind: kind, State: storage.E2EEChatInvited, Target: target, Inviter: sender, Replaces: obj.Replaces, Epoch: obj.Epoch, Transfer: transfer}
 		if kind == storage.E2EEChatDirect {
-			chat.Peer = ev.account
+			chat.Peer = sender
 		}
 		if err = store.PutE2EEChat(owner, chat); err != nil {
-			return
+			return false
 		}
 	case err != nil:
-		return
+		return false
 	case chat.Kind != kind:
-		return
+		return false
 	}
-	at, msgid := ev.at, ev.msgid
-	if _, err = store.AddE2EEChatWelcome(owner, storage.E2EEChatWelcome{Group: obj.Group, Epoch: obj.Epoch, Kind: kind, Replaces: obj.Replaces, Target: target, Sender: ev.account, Welcome: obj.Welcome, At: at, MsgID: msgid}); err != nil {
-		return
+	if _, err = store.AddE2EEChatWelcome(owner, storage.E2EEChatWelcome{Group: obj.Group, Epoch: obj.Epoch, Kind: kind, Replaces: obj.Replaces, Target: target, Sender: sender, Welcome: obj.Welcome, At: at, MsgID: msgid}); err != nil {
+		return false
 	}
-	receipt := receiptObject{Group: obj.Group}.encode()
-	_, _ = c.sendHandshake(kindReceipt, ev.transfer, []string{ev.nick}, receipt, false)
-	m.emitE2EE(owner, model.E2EEChange{GroupID: obj.Group, Account: ev.account, Reason: "welcome"})
+	m.emitE2EE(owner, model.E2EEChange{GroupID: obj.Group, Account: sender, Reason: "welcome"})
+	return true
 }
 
 func (m *Manager) receiveReceipt(c *connection, ev handshakeEvent) {
@@ -917,7 +927,7 @@ func (m *Manager) E2EEPostCommit(ctx context.Context, owner, group string, in E2
 			kind, channel = wireGroup, chat.Target
 		}
 		w := welcomeObject{Group: group, Epoch: in.Epoch + 1, Kind: kind, Channel: channel, Welcome: in.Welcome}
-		if err = m.queueWelcome(owner, w, in.Added); err != nil {
+		if err = m.queueWelcome(c, w, in.Added); err != nil {
 			out.Warnings = append(out.Warnings, "The commit won, but its Welcome could not be queued.")
 		}
 	}
@@ -936,7 +946,16 @@ func (m *Manager) applyGroupRights(ctx context.Context, owner string, chat stora
 			warnings = append(warnings, failure+" "+err.Error())
 		}
 	}
+	c, err := m.connection(owner, m.options.Home.ID)
+	own := ""
+	if err == nil {
+		own = c.ownAccount()
+	}
 	for _, account := range in.Added {
+		// A commit that adds a new device of our own account keeps our rights.
+		if own != "" && strings.EqualFold(account, own) {
+			continue
+		}
 		change(account, "v", false, "Could not let "+account+" into the group's channel.")
 	}
 	for _, account := range in.Admins {
@@ -945,7 +964,6 @@ func (m *Manager) applyGroupRights(ctx context.Context, owner string, chat stora
 	for _, account := range in.Members {
 		change(account, "v", false, "Could not change "+account+"'s role in the group's channel.")
 	}
-	c, err := m.connection(owner, m.options.Home.ID)
 	for _, account := range in.Removed {
 		change(account, "", true, "Could not take away "+account+"'s right to enter the group's channel.")
 		if err == nil {
@@ -955,24 +973,44 @@ func (m *Manager) applyGroupRights(ctx context.Context, owner string, chat stora
 	return warnings
 }
 
-// queueWelcome keeps a Welcome for each recipient until their server confirms it.
-func (m *Manager) queueWelcome(owner string, w welcomeObject, recipients []string) error {
+// queueWelcome keeps a Welcome for each recipient until their server confirms
+// it. The sending account's own devices here get it at once: over IRC, a line
+// an account sends to itself comes back to this server only as its own echo.
+// Other accounts, here or on another server, get it over IRC.
+func (m *Manager) queueWelcome(c *connection, w welcomeObject, recipients []string) error {
+	owner, own := c.owner.ownerID, c.ownAccount()
 	clean := []string{}
 	seen := map[string]bool{}
+	self := false
 	for _, r := range recipients {
 		r = strings.TrimSpace(r)
-		if serviceAccount(r) && !seen[strings.ToLower(r)] {
+		switch {
+		case own != "" && strings.EqualFold(r, own):
+			self = true
+		case serviceAccount(r) && !seen[strings.ToLower(r)]:
 			seen[strings.ToLower(r)] = true
 			clean = append(clean, r)
 		}
 	}
-	if len(clean) == 0 {
+	if len(clean) > 0 {
+		if err := m.options.Store.AddE2EEOutbox(owner, w.Group, newTransfer(), clean, w.encode()); err != nil {
+			return err
+		}
+		m.net.wakeOutbox()
+	}
+	if !self {
 		return nil
 	}
-	if err := m.options.Store.AddE2EEOutbox(owner, w.Group, newTransfer(), clean, w.encode()); err != nil {
+	// The account already has the chat; a direct one stays filed under the
+	// other person's nick. No IRC server stamped this copy, so its position is
+	// the time it was kept.
+	chat, err := m.options.Store.E2EEChat(owner, w.Group)
+	if err != nil {
 		return err
 	}
-	m.net.wakeOutbox()
+	if !m.keepWelcome(owner, w, own, chat.Target, chat.Transfer, time.Now().UnixNano(), "") {
+		return errors.New("the Welcome for this account's devices was not stored")
+	}
 	return nil
 }
 
@@ -1115,8 +1153,10 @@ func (m *Manager) E2EECreateChat(ctx context.Context, owner string, in E2EECreat
 	if chat.Kind == storage.E2EEChatGroup {
 		warnings = append(warnings, m.applyGroupRights(ctx, owner, chat, E2EECommit{Added: recipients})...)
 	}
+	// Every device of the account but the creator's is new to the chat, so
+	// the account's own devices get the Welcome too.
 	if len(in.Welcome) > 0 && len(recipients) > 0 {
-		if err = m.queueWelcome(owner, welcome, recipients); err != nil {
+		if err = m.queueWelcome(c, welcome, append(recipients, own)); err != nil {
 			warnings = append(warnings, "The chat was created, but its Welcome could not be queued.")
 		}
 	}

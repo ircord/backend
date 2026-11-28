@@ -43,7 +43,7 @@ type E2EECreateChatInput struct {
 		Peer           string   `json:"peer,omitempty" maxLength:"100" doc:"direct: the other person's account."`
 		Members        []string `json:"members,omitempty" maxItems:"32" nullable:"false" doc:"group: the accounts you add, with or without your own. Each gets a standing right to enter the channel and the Welcome."`
 		Epoch          int64    `json:"epoch" minimum:"0" doc:"The epoch the creator reached, usually 1 after the commit that added everyone."`
-		Welcome        []byte   `json:"welcome,omitempty" doc:"The MLS Welcome for everyone added. The server delivers it to each account's IRCord server and retries until that server confirms it, for 30 days."`
+		Welcome        []byte   `json:"welcome,omitempty" doc:"The MLS Welcome for everyone added, which can include your account's other devices. Your account's devices on this server get it at once; a device that is not in it, such as yours, discards it. The server delivers it to each other account's IRCord server and retries until that server confirms it, for 30 days."`
 		Replaces       string   `json:"replaces,omitempty" maxLength:"128" doc:"direct: the earlier group this one replaces after someone started fresh."`
 	}
 }
@@ -59,7 +59,7 @@ type E2EEChatCommitInput struct {
 		Epoch   int64    `json:"epoch" minimum:"0" doc:"The epoch the commit was made in."`
 		Commit  []byte   `json:"commit"`
 		Welcome []byte   `json:"welcome,omitempty" doc:"The Welcome for the accounts the commit adds. Sent only if the commit wins its epoch."`
-		Added   []string `json:"added,omitempty" maxItems:"32" nullable:"false" doc:"Accounts the commit adds. In a group they get the right to enter once it has won."`
+		Added   []string `json:"added,omitempty" maxItems:"32" nullable:"false" doc:"Accounts the commit adds. In a group they get the right to enter once it has won. Name your own account when the commit adds a device of yours: your devices on this server get the Welcome, and your rights in the group's channel stay."`
 		Removed []string `json:"removed,omitempty" maxItems:"32" nullable:"false" doc:"Accounts the commit removes. In a group they lose the right to enter and are kicked once it has won."`
 		Admins  []string `json:"admins,omitempty" maxItems:"32" nullable:"false" doc:"Accounts the commit makes admins. They get operator rights in the group's channel."`
 		Members []string `json:"members,omitempty" maxItems:"32" nullable:"false" doc:"Admins the commit makes ordinary members again."`

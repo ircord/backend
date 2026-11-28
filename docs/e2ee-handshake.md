@@ -82,6 +82,20 @@ A backend offers a candidate 2 seconds after its arrival. A sending backend
 waits for the echo of its own last chunk and those 2 seconds. Then it answers
 its client: accepted when no candidate for the epoch sorts before its own.
 
+## Welcomes for the sender's own account
+
+The IRC server returns a line that an account sends to itself only as the
+sender's echo. A backend does not take its own echo as a Welcome. So a backend
+does not send a Welcome to its own account over IRC. It stores the Welcome for
+the account's devices when it queues the Welcome:
+
+- A new chat's Welcome goes to every device of the creating account.
+- A commit's Welcome goes to them when the commit adds the account itself.
+
+No IRC server stamps this copy, so its position is the time the backend stored
+it, with an empty message ID. Other accounts on the same backend get their
+Welcome over IRC, with its receipt, like accounts on other servers.
+
 ## Retries and limits
 
 - A Welcome stays in the sender's outbox until the receiver's server sends its

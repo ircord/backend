@@ -7,6 +7,10 @@
 - Experimental encrypted chats now reach people on other IRCord servers of the home network, and people can start encrypted groups. A group lives in its own invite-only channel; the person who created it and the admins they appoint decide who is in it. Every message in an encrypted group notifies unless the group is muted.
 - If encryption for an account is already set up on another IRCord server, this server says so instead of setting up a second set of keys.
 
+### Fixed
+
+- Your other devices on this IRCord server now receive the invitation to encrypted chats and groups that you start or add them to. Before, only other accounts received it, so your other devices could not read those chats.
+
 ## v0.9.0 — 2026-11-28
 
 ### New
