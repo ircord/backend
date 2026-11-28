@@ -549,3 +549,131 @@ func TestErgoE2EEGroupChannel(t *testing.T) {
 		t.Fatal("a removed member re-entered the group's channel")
 	}
 }
+
+// One account with two devices on one backend, a second account on the same
+// backend and a person on another backend. A Welcome for the account's own
+// devices never comes back over IRC except as the sender's echo, so the
+// backend keeps it for them when it sends; other accounts get theirs over IRC
+// as before, wherever they are.
+func TestErgoE2EEWelcomeReachesOwnDevices(t *testing.T) {
+	host, port := e2eeNetworkErgo(t)
+	suffix := id()[:8]
+	alice, carol, bob := "oa"+suffix, "oc"+suffix, "ob"+suffix
+	password := ergoAccounts(t, host, port, alice, carol, bob)
+	a := startBackend(t, host, port, t.TempDir(), alice, carol)
+	b := startBackend(t, host, port, t.TempDir(), bob)
+	a.connect(t, host, port, alice, password)
+	a.connect(t, host, port, carol, password)
+	b.connect(t, host, port, bob, password)
+	first := a.setUp(t, alice, 0)
+	second := "d" + id()[:8]
+	if err := a.store.PutE2EEDevice(alice, second, 1, random(t, 300), random(t, 430), "test"); err != nil {
+		t.Fatal(err)
+	}
+	carolDevice := a.setUp(t, carol, 0)
+	bobDevice := b.setUp(t, bob, 0)
+	ctx := context.Background()
+	welcomesOf := func(backend *e2eeBackend, owner, device, group string) []storage.E2EEChatWelcome {
+		out := []storage.E2EEChatWelcome{}
+		all, _ := backend.store.E2EEChatWelcomes(owner, device)
+		for _, w := range all {
+			if w.Group == group {
+				out = append(out, w)
+			}
+		}
+		return out
+	}
+
+	// A direct chat across servers, started on alice's first device.
+	dm, err := a.m.Direct(alice, "home", bob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, welcome := newTransfer(), random(t, 4000)
+	if _, _, err = a.m.E2EECreateChat(ctx, alice, E2EECreate{Group: direct, Kind: storage.E2EEChatDirect, Conversation: dm.ID, Peer: bob, Epoch: 1, Welcome: welcome}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, func() bool { return len(welcomesOf(b, bob, bobDevice, direct)) == 1 })
+	for _, device := range []string{first, second} {
+		got := welcomesOf(a, alice, device, direct)
+		if len(got) != 1 || !bytes.Equal(got[0].Welcome, welcome) || got[0].Sender != alice || got[0].Kind != storage.E2EEChatDirect || got[0].Target != bob || got[0].Epoch != 1 {
+			t.Fatalf("alice's device %s: direct Welcomes %+v", device, got)
+		}
+	}
+	if chat, err := a.store.E2EEChat(alice, direct); err != nil || chat.State != storage.E2EEChatJoined || chat.Peer != bob || chat.Conversation != dm.ID {
+		t.Fatalf("alice's direct chat %+v %v", chat, err)
+	}
+	eventually(t, func() bool {
+		states, _ := a.store.E2EEOutboxStates(alice, direct)
+		return states[bob] == storage.E2EEOutboxDelivered && len(states) == 1
+	})
+
+	// A group with bob and carol: carol's Welcome comes over IRC to her
+	// connection on the same backend, alice's other device gets its own.
+	group, groupWelcome := newTransfer(), random(t, 3000)
+	chat, warnings, err := a.m.E2EECreateChat(ctx, alice, E2EECreate{Group: group, Kind: storage.E2EEChatGroup, Members: []string{alice, bob, carol}, Epoch: 1, Welcome: groupWelcome})
+	if err != nil || len(warnings) != 0 {
+		t.Fatal(err, warnings)
+	}
+	eventually(t, func() bool { return len(welcomesOf(b, bob, bobDevice, group)) == 1 })
+	eventually(t, func() bool { return len(welcomesOf(a, carol, carolDevice, group)) == 1 })
+	for _, device := range []string{first, second} {
+		got := welcomesOf(a, alice, device, group)
+		if len(got) != 1 || !bytes.Equal(got[0].Welcome, groupWelcome) || got[0].Sender != alice || got[0].Kind != storage.E2EEChatGroup || got[0].Target != chat.Target {
+			t.Fatalf("alice's device %s: group Welcomes %+v", device, got)
+		}
+	}
+	if got := welcomesOf(a, carol, carolDevice, group); got[0].Sender != alice || got[0].MsgID == "" {
+		t.Fatalf("carol's Welcome %+v", got)
+	}
+	eventually(t, func() bool {
+		states, _ := a.store.E2EEOutboxStates(alice, group)
+		return states[bob] == storage.E2EEOutboxDelivered && states[carol] == storage.E2EEOutboxDelivered && len(states) == 2
+	})
+
+	// The second device reads and writes in the group, as the account.
+	if err = a.m.Send(alice, SendInput{ClientID: id(), ConversationID: chat.Conversation, Encrypted: &model.Encrypted{Payload: "ZnJvbSB0d28"}}); err != nil {
+		t.Fatal(err)
+	}
+	post := func(in E2EECommit) {
+		t.Helper()
+		result, err := a.m.E2EEPostCommit(ctx, alice, group, in)
+		if err != nil || !result.Accepted || len(result.Warnings) != 0 {
+			t.Fatalf("commit %+v %v", result, err)
+		}
+	}
+	// The commit is in the log every device of the account reads.
+	post(E2EECommit{Epoch: 1, Commit: random(t, 900)})
+	if log, _ := a.store.E2EEObservedCommits(alice, group, 1, 10); len(log) != 1 || log[0].Sender != alice {
+		t.Fatalf("alice's commit log %+v", log)
+	}
+
+	// A commit that adds a new device of alice's names her account: the
+	// Welcome reaches her devices here, and her founder rights stay.
+	third := "d" + id()[:8]
+	if err = a.store.PutE2EEDevice(alice, third, 1, random(t, 300), random(t, 430), "test"); err != nil {
+		t.Fatal(err)
+	}
+	added := random(t, 2000)
+	post(E2EECommit{Epoch: 2, Commit: random(t, 900), Welcome: added, Added: []string{alice}})
+	got := welcomesOf(a, alice, third, group)
+	if len(got) != 1 || !bytes.Equal(got[0].Welcome, added) || got[0].Epoch != 3 {
+		t.Fatalf("alice's new device: Welcomes %+v", got)
+	}
+	if states, _ := a.store.E2EEOutboxStates(alice, group); len(states) != 2 {
+		t.Fatalf("a Welcome for alice went over IRC: %+v", states)
+	}
+	registration, err := a.m.ChannelRegistration(ctx, alice, chat.Conversation)
+	if err != nil || !registration.Registered || registration.Founder != alice {
+		t.Fatalf("registration %+v %v", registration, err)
+	}
+	access, err := a.m.ChannelAccess(ctx, alice, chat.Conversation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range access {
+		if entry.Account == alice && entry.Mode == "v" {
+			t.Fatalf("alice's own access changed: %+v", access)
+		}
+	}
+}
