@@ -28,6 +28,16 @@ type Encrypted struct {
 
 // EncryptionCapability says that this server offers end-to-end encryption.
 type EncryptionCapability struct {
-	Experimental bool `json:"experimental" doc:"The feature has not had its outside review yet; clients label it experimental."`
-	MaxPayload   int  `json:"maxPayload" doc:"Largest base64url payload one encrypted message may carry."`
+	Experimental  bool `json:"experimental" doc:"The feature has not had its outside review yet; clients label it experimental."`
+	MaxPayload    int  `json:"maxPayload" doc:"Largest base64url payload one encrypted message may carry."`
+	Groups        bool `json:"groups" doc:"Encrypted groups in their own invite-only channels are available."`
+	AcrossServers bool `json:"acrossServers" doc:"Encrypted chats reach people on other IRCord servers of the home network. Handshakes travel over IRC; see the /api/v1/e2ee/chats operations."`
+}
+
+// E2EEChange tells an account's clients to sync their encryption state now
+// instead of waiting for their next poll.
+type E2EEChange struct {
+	GroupID string `json:"groupId,omitempty" doc:"The encrypted chat that changed."`
+	Account string `json:"account,omitempty" doc:"The account whose action or keys caused the change."`
+	Reason  string `json:"reason" enum:"commit,welcome,declined,rejoin,notice" doc:"commit: new commits are settled; welcome: an invitation or Welcome arrived; declined: someone declined an invitation; rejoin: a device asks to be added again; notice: the account's devices or identity changed, so fetch its directory again."`
 }

@@ -20,8 +20,11 @@ const deviceKey = "ircord/device"
 // autoAwayReason is the AWAY message other IRC users see while no client is active.
 const autoAwayReason = "Away (no active IRCord client)"
 
-// subscribedKeys are the metadata keys IRCord subscribes to: the profile keys and the device.
-func subscribedKeys() []string { return append(append([]string{}, metadataKeys...), deviceKey) }
+// subscribedKeys are the metadata keys IRCord subscribes to: the profile keys,
+// the device and the public encryption capability.
+func subscribedKeys() []string {
+	return append(append([]string{}, metadataKeys...), deviceKey, encryptionKey)
+}
 
 // Delays are the account's escalation thresholds.
 func (m *Manager) Delays(owner string) activity.Delays {

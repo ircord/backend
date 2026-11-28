@@ -114,6 +114,12 @@ func applyProfileMetadata(v *Member, key, value string) bool {
 		} else {
 			return false
 		}
+	case encryptionKey:
+		if value == "" || value == encryptionValue {
+			v.Encryption = value
+		} else {
+			return false
+		}
 	default:
 		return applyRichProfileMetadata(v, key, value)
 	}

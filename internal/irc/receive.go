@@ -73,6 +73,7 @@ func (c *connection) receive(client *girc.Client, e girc.Event) {
 		c.message(e)
 	case "TAGMSG":
 		c.encryptionProbe(client, e)
+		c.receiveHandshake(client, e)
 		c.typing(e)
 		c.attract(e)
 		c.reaction(e)
@@ -84,6 +85,9 @@ func (c *connection) receive(client *girc.Client, e girc.Event) {
 		c.receiveConversation(e)
 	case "JOIN", "PART", "KICK", "QUIT", "353", "366", "352", "354", "MODE", "ACCOUNT", "CHGHOST":
 		c.receiveMemberSync(client, e)
+		if e.Command == "JOIN" {
+			c.e2eeJoined(e)
+		}
 	case "761":
 		if c.metadataWriteReply(e) {
 			break
@@ -106,6 +110,8 @@ func (c *connection) receive(client *girc.Client, e girc.Event) {
 		c.redactionResult(label, "")
 	case "433":
 		c.nicknameConflict(client, e)
+	case "730":
+		c.monitorOnline(e)
 	case "FAIL", "400", "401", "403", "404", "405", "407", "411", "412", "417", "421", "442", "443", "471", "472", "473", "474", "475", "477", "478", "482":
 		if e.Command != "FAIL" || !c.metadataWriteReply(e) {
 			c.receiveCommandFailure(e)

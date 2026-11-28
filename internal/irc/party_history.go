@@ -357,7 +357,9 @@ func (m *Manager) leaveAllParties(owner string) error {
 }
 
 func conversationPolicyKind(conv Conversation) string {
-	if conv.Party != nil {
+	// The server cannot see mentions in an encrypted group, so every message
+	// notifies there, as in a direct conversation, unless the group is muted.
+	if conv.Party != nil || encryptedGroupConversation(conv) {
 		return "direct"
 	}
 	return conv.Kind

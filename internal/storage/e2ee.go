@@ -196,7 +196,7 @@ func (s *Store) PublishE2EEIdentity(owner string, key []byte, reset bool) (E2EEI
 		if _, err = tx.Exec("UPDATE e2ee_identities SET identity_key=?,generation=?,updated_ns=? WHERE owner=?", key, generation, now, owner); err != nil {
 			return E2EEIdentity{}, err
 		}
-		for _, table := range []string{"e2ee_devices", "e2ee_welcomes", "e2ee_approvals"} {
+		for _, table := range []string{"e2ee_devices", "e2ee_welcomes", "e2ee_approvals", "e2ee_device_lists"} {
 			if _, err = tx.Exec("DELETE FROM "+table+" WHERE owner=?", owner); err != nil {
 				return E2EEIdentity{}, err
 			}
@@ -726,10 +726,18 @@ func (s *Store) E2EEConversationState(owner, conversation string) (E2EEConversat
 // account's conversation.
 func (s *Store) E2EEConversationEncrypted(owner, conversation string) (bool, error) {
 	v, err := s.E2EEConversationState(owner, conversation)
+	if err == nil && v.Group != "" {
+		return true, nil
+	}
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return false, err
+	}
+	// An encrypted chat carried over IRC binds the conversation once joined.
+	_, err = s.E2EEChatForConversation(owner, conversation)
 	if errors.Is(err, ErrNotFound) {
 		return false, nil
 	}
-	return v.Group != "", err
+	return err == nil, err
 }
 
 // AddE2EEApproval relays one message between two devices of an account. Relay

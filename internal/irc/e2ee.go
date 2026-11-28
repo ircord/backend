@@ -94,7 +94,11 @@ func (m *Manager) EncryptionCapability() *model.EncryptionCapability {
 	if !m.E2EEEnabled() {
 		return nil
 	}
-	return &model.EncryptionCapability{Experimental: true, MaxPayload: model.MaxEncryptedPayload}
+	return &model.EncryptionCapability{Experimental: true, MaxPayload: model.MaxEncryptedPayload, Groups: true, AcrossServers: true}
+}
+
+func kickEvent(channel, account string) *girc.Event {
+	return &girc.Event{Command: "KICK", Params: []string{channel, account, "Removed from the encrypted group"}}
 }
 
 func encryptedClassCode(class string) string {
@@ -240,6 +244,9 @@ func (c *connection) encryptionProbe(client *girc.Client, e girc.Event) {
 	c.mu.Unlock()
 	if passed {
 		c.refreshFeatures(client)
+		if c.manager != nil {
+			c.manager.e2eeOnline(c)
+		}
 	}
 }
 

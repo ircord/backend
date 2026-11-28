@@ -319,6 +319,8 @@ func clearMetadata(v *Member, key string) bool {
 		v.Bio = ""
 	case deviceKey:
 		v.Device = ""
+	case encryptionKey:
+		v.Encryption = ""
 	default:
 		applyRichProfileMetadata(v, key, "")
 	}

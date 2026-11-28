@@ -87,6 +87,8 @@ type Manager struct {
 	sharedLoaded bool
 	// e2ee is the current encryption switch; see E2EEEnabled.
 	e2ee atomic.Bool
+	// net carries encrypted chats over IRC; see e2ee_chats.go.
+	net e2eeNetwork
 }
 
 func New(options Options) *Manager {
@@ -103,8 +105,10 @@ func New(options Options) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{profileExpiryWake: make(chan struct{}, 1), serviceSlots: make(chan struct{}, 16), checkSlots: make(chan struct{}, 16), listSlots: make(chan struct{}, 4), deletedOwners: map[string]bool{}, owners: map[string]*workspace{}, options: options, ctx: ctx, cancel: cancel}
 	m.e2ee.Store(options.E2EE)
-	m.wg.Add(1)
+	m.net.wake = make(chan struct{}, 1)
+	m.wg.Add(2)
 	go m.runProfileExpiry()
+	go m.runE2EEOutbox()
 	m.partyPeople.limit = 128
 	m.sharedMu.Lock()
 	_ = m.loadSharedChannels() // logged; retried on first use
