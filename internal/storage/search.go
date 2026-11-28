@@ -261,7 +261,7 @@ func (s *Store) SearchPageContext(ctx context.Context, owner string, f SearchFil
 
 // MatchesSearch keeps the in-memory fallback aligned with SQL filters.
 func MatchesSearch(msg model.Message, f SearchFilter) bool {
-	if f.MatchNone || msg.Deleted || f.Query != "" && !msgindex.SearchPhrase(msg.Text, f.Query) {
+	if f.MatchNone || msg.Deleted || msg.Encrypted != nil || f.Query != "" && !msgindex.SearchPhrase(msg.Text, f.Query) {
 		return false
 	}
 	if len(f.From) > 0 && !slices.Contains(f.From, msg.SenderID) {

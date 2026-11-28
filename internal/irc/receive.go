@@ -72,6 +72,7 @@ func (c *connection) receive(client *girc.Client, e girc.Event) {
 		}
 		c.message(e)
 	case "TAGMSG":
+		c.encryptionProbe(client, e)
 		c.typing(e)
 		c.attract(e)
 		c.reaction(e)

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### New
+
+- Server operators can turn on experimental end-to-end encrypted direct messages between people on the server's home network. The server delivers these messages but can't read them, and keeps them out of search, link lists, the inbox text and notification text.
+
 ## v0.8.2 — 2026-11-27
 
 ### New

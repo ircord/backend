@@ -67,7 +67,8 @@ func gifHost(host string) bool {
 	return false
 }
 
-// Indexed reports whether a message kind can carry catalogued content.
+// Indexed reports whether a message kind can carry catalogued content. The
+// text of an end-to-end encrypted message is a placeholder and carries none.
 func Indexed(msg model.Message) bool {
-	return !msg.Deleted && (msg.Kind == "message" || msg.Kind == "action" || msg.Kind == "notice")
+	return !msg.Deleted && msg.Encrypted == nil && (msg.Kind == "message" || msg.Kind == "action" || msg.Kind == "notice")
 }

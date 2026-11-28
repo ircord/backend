@@ -18,22 +18,26 @@ import (
 )
 
 type connection struct {
-	channelRequest         *channelExchangeReply
-	serviceGate            chan struct{}
-	serviceRequest         *serviceRequest
-	serviceBatches         map[string]string
-	ergoServices           bool
-	readMarkersSeen        map[string]bool
-	readMarkerWrites       map[string]readMarkerWrite
-	readMarkerEvents       map[*girc.Event]string
-	realnames              map[string]string
-	typingSent             map[string]typingSent
-	typingReceived         map[string]typingSent
-	typingWindow           time.Time
-	typingBurst            int
-	attractSent            map[string]time.Time
-	attractRecent          []time.Time
-	attractReceived        map[string]time.Time
+	channelRequest   *channelExchangeReply
+	serviceGate      chan struct{}
+	serviceRequest   *serviceRequest
+	serviceBatches   map[string]string
+	ergoServices     bool
+	readMarkersSeen  map[string]bool
+	readMarkerWrites map[string]readMarkerWrite
+	readMarkerEvents map[*girc.Event]string
+	realnames        map[string]string
+	typingSent       map[string]typingSent
+	typingReceived   map[string]typingSent
+	typingWindow     time.Time
+	typingBurst      int
+	attractSent      map[string]time.Time
+	attractRecent    []time.Time
+	attractReceived  map[string]time.Time
+	// e2eeTest is the encryption self-test of the current attempt; e2eeProbe is the
+	// tag value it sent to our own nick.
+	e2eeTest               e2eeTestState
+	e2eeProbe              string
 	createdAt              time.Time
 	modeListGate           chan struct{}
 	modeList               *modeListRequest
@@ -423,6 +427,7 @@ func (c *connection) run() {
 		c.capOffers = map[string]string{}
 		c.capValues = map[string]string{}
 		c.lineBytes = 0
+		c.e2eeTest, c.e2eeProbe = e2eeUntested, ""
 		c.ergoServices = false
 		c.serviceBatches = map[string]string{}
 		c.mu.Unlock()
@@ -685,6 +690,7 @@ func (c *connection) connectedAttempt(attemptCtx context.Context, client *girc.C
 	c.nicks[c.fold(n.Nick)] = w.self.ID
 	w.mu.Unlock()
 	c.connectionState("connected", client, nil)
+	c.probeEncryption(client)
 	c.wakeOutbox(true)
 	if c.manager.parties != nil && c.owner.ownerID != partyControlOwner {
 		select {

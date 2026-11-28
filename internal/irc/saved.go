@@ -268,7 +268,8 @@ func (w *workspace) memorySaved(cursor, query string, limit int) ([]storage.Save
 	out := []storage.SavedEntry{}
 	for _, v := range all[start:] {
 		msg := w.memoryMessage(v.ConversationID, v.MessageID)
-		if query != "" && (msg == nil || msg.Deleted || !strings.Contains(asciiLower(msg.Text), asciiLower(query))) {
+		// An encrypted message's text is its placeholder; text search never matches it.
+		if query != "" && (msg == nil || msg.Deleted || msg.Encrypted != nil || !strings.Contains(asciiLower(msg.Text), asciiLower(query))) {
 			continue
 		}
 		if len(out) == limit {

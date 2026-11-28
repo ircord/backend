@@ -141,6 +141,11 @@ func (m *Manager) ToggleReaction(owner, conversation, messageID, emoji string) (
 	if e := m.partyAccess(owner, conversation); e != nil {
 		return Message{}, e
 	}
+	// A plaintext reaction would show the emoji to the server; encrypted reactions
+	// travel inside the ciphertext.
+	if e := m.refusePlaintext(owner, conversation); e != nil {
+		return Message{}, e
+	}
 	if emoji == "" || !clean(emoji, 64) {
 		return Message{}, fmt.Errorf("invalid reaction")
 	}

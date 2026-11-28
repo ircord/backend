@@ -44,6 +44,9 @@ type Options struct {
 	// Moderation is the operator login on the associated server that carries out
 	// server owners' deletions. Without it, server owners delete like anyone else.
 	Moderation *ModerationLogin
+	// E2EE is the operator switch for end-to-end encryption between IRCord
+	// clients on the home network. It is experimental and off by default.
+	E2EE bool
 }
 
 // Presets returns only public operator-provided connection hints.

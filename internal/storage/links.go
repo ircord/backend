@@ -16,7 +16,14 @@ import (
 func indexMessage(q interface {
 	Exec(string, ...any) (sql.Result, error)
 }, owner string, msg model.Message) error {
-	if _, err := q.Exec("UPDATE messages SET search_visible=?,search_kinds=? WHERE owner=? AND id=?", !msg.Deleted, msgindex.SearchKinds(msg), owner, msg.ID); err != nil {
+	// An encrypted message's text is a placeholder: it stays out of search and
+	// the link catalog, which hold nothing for it.
+	visible := !msg.Deleted && msg.Encrypted == nil
+	kinds := 0
+	if visible {
+		kinds = msgindex.SearchKinds(msg)
+	}
+	if _, err := q.Exec("UPDATE messages SET search_visible=?,search_kinds=? WHERE owner=? AND id=?", visible, kinds, owner, msg.ID); err != nil {
 		return err
 	}
 	if _, err := q.Exec("DELETE FROM message_links WHERE owner=? AND message=?", owner, msg.ID); err != nil {

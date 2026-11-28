@@ -36,6 +36,7 @@ type InboxItem struct {
 	Kind           string    `json:"kind,omitempty" enum:"message,action,notice"`
 	Excerpt        string    `json:"excerpt,omitempty" doc:"The message as plain text, at most 280 characters"`
 	Truncated      bool      `json:"truncated,omitempty"`
+	Encrypted      bool      `json:"encrypted,omitempty" doc:"The message is end-to-end encrypted. It has no excerpt; the client shows its own decrypted copy."`
 }
 
 type InboxPage struct {
@@ -56,7 +57,7 @@ type InboxSummary struct {
 // with w.mu held after the message itself was stored. The store keeps one item
 // per message, so replays and repeated deliveries never add a second one.
 func (m *Manager) recordInbox(w *workspace, conv Conversation, msg Message, sender Member, nick string, replyToSelf bool) {
-	if w.store == nil || msg.Deleted || msg.Kind != "message" && msg.Kind != "action" && msg.Kind != "notice" {
+	if w.store == nil || msg.Deleted || auxiliary(msg) || msg.Kind != "message" && msg.Kind != "action" && msg.Kind != "notice" {
 		return
 	}
 	if msg.Historical && time.Since(msg.CreatedAt) > storage.InboxRetention {
@@ -66,7 +67,7 @@ func (m *Manager) recordInbox(w *workspace, conv Conversation, msg Message, send
 	if conv.ChannelSettings != nil {
 		shared = conv.ChannelSettings.Notifications
 	}
-	reasons := w.policy.Attention(conv.ID, conversationPolicyKind(conv), shared, msg.Kind, msg.Text, w.recipient(conv, nick, msg), sender.Nick, sender.Username, sender.Host, sender.ID == w.self.ID, replyToSelf)
+	reasons := w.policy.Attention(conv.ID, conversationPolicyKind(conv), shared, msg.Kind, policyText(msg), w.recipient(conv, nick, msg), sender.Nick, sender.Username, sender.Host, sender.ID == w.self.ID, replyToSelf)
 	if len(reasons) == 0 {
 		return
 	}
@@ -101,6 +102,11 @@ func (w *workspace) resolveInbox(row storage.InboxRow) InboxItem {
 	}
 	item.Status = "available"
 	item.Unread = row.Unread
+	if encryptedOnly(*row.Message) {
+		// The client decrypts its own copy and fills in the text.
+		item.Encrypted = true
+		return item
+	}
 	item.Excerpt, item.Truncated = excerpt(row.Message.Text)
 	return item
 }

@@ -30,6 +30,7 @@ func (c *connection) features(isupport map[string]string) model.Features {
 	f.Replies = c.caps["message-tags"] && tagAllowed(policy, "reply")
 	f.Reactions = f.Replies && tagAllowed(policy, "draft/react") && tagAllowed(policy, "draft/unreact")
 	f.Edit = c.caps["message-tags"] && c.caps["echo-message"] && c.caps["account-tag"] && tagAllowed(policy, editTag[1:])
+	f.Encryption = c.e2eeTest == e2eePassed && c.e2eeEligibleLocked(policy)
 	f.Typing = c.caps["message-tags"] && tagAllowed(policy, "typing")
 	f.Attract = c.caps["message-tags"] && tagAllowed(policy, attractTag[1:])
 	f.ReadMarkers = c.caps["draft/read-marker"] && c.caps["server-time"]
@@ -122,6 +123,7 @@ func (c *connection) capabilityEvent(client *girc.Client, e girc.Event) {
 	}
 	c.mu.Unlock()
 	c.refreshFeatures(client)
+	c.probeEncryption(client)
 }
 
 func (c *connection) refreshFeatures(client *girc.Client) {

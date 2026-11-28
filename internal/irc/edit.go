@@ -32,6 +32,10 @@ func (m *Manager) Edit(owner, conversation, messageID, text string) (Message, er
 	if e := m.partyAccess(owner, conversation); e != nil {
 		return Message{}, e
 	}
+	// An edit is a plaintext PRIVMSG; encrypted edits travel inside the ciphertext.
+	if e := m.refusePlaintext(owner, conversation); e != nil {
+		return Message{}, e
+	}
 	if strings.TrimSpace(text) == "" || utf8.RuneCountInString(text) > 4000 || len(text) > 4096 || strings.ContainsAny(text, "\r\x00") {
 		return Message{}, fmt.Errorf("invalid message (maximum 4000 characters / 4096 UTF-8 bytes)")
 	}
@@ -199,8 +203,10 @@ func mayEdit(target Message, sender, account string) bool {
 	return sender == target.SenderID && original != "" && strings.EqualFold(account, original)
 }
 
+// An encrypted message is edited inside its ciphertext, never by a plaintext
+// +ircord/edit line, which would put the new text in the clear.
 func editable(msg Message) bool {
-	return (msg.Kind == "message" || msg.Kind == "action") && msg.GIF == nil && !msg.HasAttachments()
+	return (msg.Kind == "message" || msg.Kind == "action") && msg.GIF == nil && !msg.HasAttachments() && msg.Encrypted == nil
 }
 
 // addEdit records one edit on target; it reports false for a duplicate.

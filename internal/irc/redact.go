@@ -108,7 +108,7 @@ func (m *Manager) RedactAs(ctx context.Context, owner, conversation, messageID, 
 		return RedactResult{}, ErrDeleteForbidden
 	}
 	out := RedactResult{Original: target, Channel: c.target(conv), Sender: sender}
-	out.Original.Text, out.Original.Edits, out.Original.OriginalText, out.Original.ReplyTo = "", nil, "", nil
+	out.Original.Text, out.Original.Edits, out.Original.OriginalText, out.Original.ReplyTo, out.Original.Encrypted = "", nil, "", nil, nil
 	if target.SenderID == self {
 		out.Authority = AuthorityAuthor
 	} else if out.Authority = m.moderationAuthority(owner, c, conv, network, self); out.Authority == "" {
@@ -298,6 +298,8 @@ func (c *connection) applyRedaction(conv Conversation, msg Message, historical b
 	msg.Deleted = true
 	msg.Mention = false
 	msg.GIF = nil
+	// A deleted encrypted message keeps no ciphertext on the server.
+	msg.Encrypted = nil
 	msg.SetAttachments(nil)
 	msg.ReplyTo = nil
 	msg.Reactions = []Reaction{}

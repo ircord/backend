@@ -78,6 +78,11 @@ type Features struct {
 	// echo-message and account-tag are negotiated and CLIENTTAGDENY allows
 	// +ircord/edit.
 	Edit bool `json:"edit"`
+	// Encryption reports whether end-to-end encrypted messages can be sent on this
+	// connection: the server offers encryption, this is the home network,
+	// message-tags, echo-message and account-tag are negotiated, CLIENTTAGDENY
+	// allows +ircord/e2ee and a tagged message to our own nick came back intact.
+	Encryption bool `json:"encryption" doc:"End-to-end encrypted messages can be sent here: the server offers encryption, this is the server's home network, and a self-test showed that the network carries the +ircord/e2ee tag."`
 }
 type MultilineLimits struct {
 	// Limits include IRCord's own safety bounds and the negotiated server bounds.
@@ -89,6 +94,7 @@ type Capabilities struct {
 	Upload     *UploadCapability     `json:"upload,omitempty" doc:"Application upload service availability and limits; distinct from IRC network features."`
 	Moderation *ModerationCapability `json:"moderation,omitempty" doc:"Present when the signed-in account is a server owner who can delete other people's channel messages and mark bots on one network."`
 	Themes     *ThemeCapability      `json:"themes,omitempty" doc:"What personal themes may do on this instance. Absent from older backends, which allow everything."`
+	Encryption *EncryptionCapability `json:"encryption,omitempty" doc:"Present when the server operator turned on end-to-end encryption, an experimental feature."`
 }
 
 // ThemeCapability carries the operator's choices for personal themes.
@@ -293,6 +299,9 @@ type Message struct {
 	// had not arrived yet; it names the original's msgid so the edit can be
 	// folded in when the original arrives.
 	EditOf string `json:"editOf,omitempty"`
+	// Encrypted is set on an end-to-end encrypted message. Text then holds the
+	// fixed placeholder; the content is only in the client-decrypted payload.
+	Encrypted *Encrypted `json:"encrypted,omitempty" doc:"Set on an end-to-end encrypted message. text then holds a fixed placeholder; clients decrypt the payload."`
 }
 
 func (m Message) HasAttachments() bool {
@@ -364,6 +373,7 @@ type SendInput struct {
 	ReplyToID      string        `json:"replyToId,omitempty"`
 	GIF            *GIF          `json:"gif,omitempty"`
 	Endpoint       *SendEndpoint `json:"endpoint,omitempty"`
+	Encrypted      *Encrypted    `json:"encrypted,omitempty"`
 }
 
 type SendEndpoint struct {

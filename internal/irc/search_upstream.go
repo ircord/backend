@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lrstanley/girc"
+	"ircord/backend/internal/model"
 	"ircord/backend/internal/storage"
 )
 
@@ -122,6 +123,11 @@ func (m *Manager) searchUpstreamResults(ctx context.Context, owner string, in Se
 		}
 		identity := &SearchContext{Available: true, Identity: "retained"}
 		senderNick := ""
+		// The server's copy of an encrypted message is its placeholder, which
+		// search must never return, whether or not the tag survived.
+		if !found && (parseEncryptedTag(event.Tags[e2eeTag]) != nil || event.Last() == model.EncryptedPlaceholder) {
+			continue
+		}
 		if !found {
 			sender := c.knownMember(event.Source.Name, event.Tags["account"])
 			if sender == "" {
