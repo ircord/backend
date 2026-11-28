@@ -469,9 +469,9 @@ func (m *Manager) dispatchSend(owner string, input SendInput, expected *connecti
 		delete(tags, "+ircord/client-id")
 	}
 	if input.Encrypted != nil {
-		if conv.Kind != "direct" {
+		if conv.Kind != "direct" && !encryptedGroupConversation(conv) {
 			c.mu.Unlock()
-			return fmt.Errorf("%w: encrypted messages work in direct conversations for now", ErrUnsupported)
+			return fmt.Errorf("%w: encrypted messages work in direct conversations and encrypted groups", ErrUnsupported)
 		}
 		if !features.Encryption || tags == nil {
 			// The self-test of a new connection is still running: keep the send queued.

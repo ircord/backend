@@ -53,8 +53,19 @@ type E2EEDevice struct {
 }
 
 type E2EEOwnDirectory struct {
-	Identity *E2EEIdentity `json:"identity,omitempty" doc:"Absent until the account's first device publishes an identity key."`
-	Devices  []E2EEDevice  `json:"devices" nullable:"false"`
+	Identity   *E2EEIdentity   `json:"identity,omitempty" doc:"Absent until the account's first device publishes an identity key."`
+	Devices    []E2EEDevice    `json:"devices" nullable:"false"`
+	DeviceList *E2EEDeviceList `json:"deviceList,omitempty" doc:"The newest signed device list your devices published."`
+	Elsewhere  bool            `json:"elsewhere" doc:"Encryption for this account is set up on another IRCord server, and this one has no keys for it. Encrypted chats are readable only through that server; this server refuses to set up a second identity. This is the server's last answer: it asks again in the background and sends e2ee.changed when it finds keys elsewhere."`
+}
+
+type E2EEDeviceList struct {
+	List    []byte `json:"list" doc:"The list of the account's current device IDs, signed by its identity key. Clients check the signature; the server does not."`
+	Counter int64  `json:"counter" doc:"Goes up with every new list. Clients refuse a list older than the newest one they have seen."`
+}
+
+type E2EEDeviceListInput struct {
+	Body E2EEDeviceList
 }
 
 type E2EEIdentityInput struct {
@@ -105,6 +116,8 @@ type E2EEPeerDirectory struct {
 	IdentityKey []byte           `json:"identityKey"`
 	Generation  int64            `json:"generation"`
 	Devices     []E2EEPeerDevice `json:"devices" nullable:"false"`
+	DeviceList  *E2EEDeviceList  `json:"deviceList,omitempty" doc:"The person's newest signed device list, when their devices published one."`
+	Source      string           `json:"source" enum:"server,network" doc:"server: this IRCord server holds the person's keys. network: the person's own IRCord server answered over IRC, so the keys passed through it and the IRC network; compare security codes to be sure."`
 }
 
 type E2EEClaimedPackage struct {
@@ -119,6 +132,8 @@ type E2EEClaim struct {
 	IdentityKey []byte               `json:"identityKey"`
 	Generation  int64                `json:"generation"`
 	Items       []E2EEClaimedPackage `json:"items" nullable:"false" doc:"One key package for each device that has one. Single-use packages are removed from the directory."`
+	DeviceList  *E2EEDeviceList      `json:"deviceList,omitempty"`
+	Source      string               `json:"source" enum:"server,network" doc:"Where the keys came from; see the person's directory."`
 }
 
 type E2EEWelcomeInput struct {
@@ -352,7 +367,40 @@ func (s *Server) registerE2EE() {
 			for _, d := range devices {
 				out.Devices = append(out.Devices, E2EEDevice{DeviceID: d.ID, Certificate: d.Certificate, Label: d.Label, KeyPackages: d.KeyPackages, LastResort: d.LastResort, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt})
 			}
+			out.DeviceList, err = e2eeDeviceList(store, owner(ctx))
+			if err != nil {
+				return nil, e2eeFailure(err)
+			}
+			if out.Identity == nil {
+				out.Elsewhere = s.Manager.E2EEElsewhereHint(owner(ctx))
+			}
 			return &Output[E2EEOwnDirectory]{Body: out}, nil
+		})
+
+	huma.Register(s.API, op("put-e2ee-device-list", "PUT", "/api/v1/e2ee/device-list", "Publish your signed device list",
+		"Stores the list of your current device IDs, signed by your identity key, and tells your encrypted chats that it changed. The counter must go up; publishing the same list again changes nothing. Others see the list in your directory and refuse an older one, so a signed-out device can't be passed off as current."),
+		func(ctx context.Context, in *E2EEDeviceListInput) (*Output[E2EEDeviceList], error) {
+			store, err := s.e2eeStore()
+			if err != nil {
+				return nil, err
+			}
+			if !blobOK(in.Body.List, e2eeMaxCertificate) {
+				return nil, tooLarge("list", e2eeMaxCertificate)
+			}
+			if in.Body.Counter < 1 {
+				return nil, huma.Error422UnprocessableEntity("counter must be at least 1")
+			}
+			changed, err := store.PutE2EEDeviceList(owner(ctx), in.Body.List, in.Body.Counter)
+			if errors.Is(err, storage.ErrE2EEConflict) {
+				return nil, problem(409, "Your devices already published a newer list, or this account has no identity yet. Read your directory, then try again.", problemResourceConflict)
+			}
+			if err != nil {
+				return nil, e2eeFailure(err)
+			}
+			if changed {
+				s.Manager.E2EEDeviceListChanged(owner(ctx))
+			}
+			return &Output[E2EEDeviceList]{Body: in.Body}, nil
 		})
 
 	huma.Register(s.API, op("publish-e2ee-identity", "PUT", "/api/v1/e2ee/identity", "Publish your identity key, or start fresh",
@@ -365,9 +413,26 @@ func (s *Server) registerE2EE() {
 			if !blobOK(in.Body.IdentityKey, e2eeMaxIdentityKey) {
 				return nil, tooLarge("identityKey", e2eeMaxIdentityKey)
 			}
+			before, err := store.E2EEIdentity(owner(ctx))
+			if errors.Is(err, storage.ErrNotFound) {
+				// One account, one identity: a second IRCord server would look
+				// like an identity change to everyone.
+				elsewhere, err := s.Manager.E2EEElsewhere(ctx, owner(ctx))
+				if err != nil {
+					return nil, commandFailure(err)
+				}
+				if elsewhere {
+					return nil, commandFailure(irc.ErrE2EEElsewhere)
+				}
+			} else if err != nil {
+				return nil, e2eeFailure(err)
+			}
 			v, err := store.PublishE2EEIdentity(owner(ctx), in.Body.IdentityKey, in.Body.Reset)
 			if err != nil {
 				return nil, e2eeFailure(err)
+			}
+			if v.Generation != before.Generation {
+				s.Manager.E2EEIdentityPublished(owner(ctx), before.Generation != 0)
 			}
 			return &Output[E2EEIdentity]{Body: E2EEIdentity{IdentityKey: v.IdentityKey, Generation: v.Generation, UpdatedAt: v.UpdatedAt}}, nil
 		})
@@ -398,7 +463,11 @@ func (s *Server) registerE2EE() {
 			if err != nil {
 				return nil, err
 			}
-			return nil, e2eeFailure(store.DeleteE2EEDevice(owner(ctx), in.DeviceID))
+			if err = store.DeleteE2EEDevice(owner(ctx), in.DeviceID); err != nil {
+				return nil, e2eeFailure(err)
+			}
+			s.Manager.E2EEDeviceListChanged(owner(ctx))
+			return nil, nil
 		})
 
 	huma.Register(s.API, op("add-e2ee-key-packages", "POST", "/api/v1/e2ee/devices/{deviceId}/key-packages", "Add key packages for a device",
@@ -421,17 +490,31 @@ func (s *Server) registerE2EE() {
 		})
 
 	huma.Register(s.API, op("get-e2ee-account", "GET", "/api/v1/e2ee/accounts/{account}", "Read a person's encryption directory",
-		"The identity public key and device certificates someone on this server published. A client starts an encrypted chat only when the person has a device, and checks each certificate against the identity key it pinned. Labels are left out."),
+		"The identity public key, signed device list and device certificates of anyone on the home network. When this server holds the person's keys it answers itself; otherwise it asks over IRC, and the person's own IRCord server answers (source network). A client starts an encrypted chat only when the person has a device, and checks each certificate against the identity key it pinned. Labels are left out. 404 means the person hasn't set up encryption or their server doesn't support encrypted chats with other servers yet; 504 means their server did not answer."),
 		func(ctx context.Context, in *E2EEAccountPath) (*Output[E2EEPeerDirectory], error) {
 			store, err := s.e2eeStore()
 			if err != nil {
 				return nil, err
 			}
 			id, err := e2eeOwner(store, in.Account)
-			if err != nil {
-				return nil, e2eeFailure(err)
+			var identity storage.E2EEIdentity
+			if err == nil {
+				identity, err = store.E2EEIdentity(id)
 			}
-			identity, err := store.E2EEIdentity(id)
+			if errors.Is(err, storage.ErrNotFound) {
+				remote, err := s.Manager.E2EERemoteDirectory(ctx, owner(ctx), in.Account, false)
+				if err != nil {
+					return nil, e2eeRemoteFailure(err)
+				}
+				out := E2EEPeerDirectory{Account: remote.Account, IdentityKey: remote.IdentityKey, Generation: remote.Generation, Devices: []E2EEPeerDevice{}, Source: "network"}
+				if len(remote.DeviceList) > 0 {
+					out.DeviceList = &E2EEDeviceList{List: remote.DeviceList, Counter: remote.ListCounter}
+				}
+				for _, d := range remote.Devices {
+					out.Devices = append(out.Devices, E2EEPeerDevice{DeviceID: d.ID, Certificate: d.Certificate})
+				}
+				return &Output[E2EEPeerDirectory]{Body: out}, nil
+			}
 			if err != nil {
 				return nil, e2eeFailure(err)
 			}
@@ -439,7 +522,10 @@ func (s *Server) registerE2EE() {
 			if err != nil {
 				return nil, e2eeFailure(err)
 			}
-			out := E2EEPeerDirectory{Account: in.Account, IdentityKey: identity.IdentityKey, Generation: identity.Generation, Devices: []E2EEPeerDevice{}}
+			out := E2EEPeerDirectory{Account: in.Account, IdentityKey: identity.IdentityKey, Generation: identity.Generation, Devices: []E2EEPeerDevice{}, Source: "server"}
+			if out.DeviceList, err = e2eeDeviceList(store, id); err != nil {
+				return nil, e2eeFailure(err)
+			}
 			for _, d := range devices {
 				out.Devices = append(out.Devices, E2EEPeerDevice{DeviceID: d.ID, Certificate: d.Certificate, KeyPackages: d.KeyPackages, LastResort: d.LastResort})
 			}
@@ -447,21 +533,41 @@ func (s *Server) registerE2EE() {
 		})
 
 	huma.Register(s.API, op("claim-e2ee-key-packages", "POST", "/api/v1/e2ee/accounts/{account}/key-packages/claim", "Claim key packages to add a person's devices",
-		"Takes one key package for each of the person's devices, or that device's last-resort package when it has no other. Your own account can be claimed too, to add your other devices."),
+		"Takes one key package for each of the person's devices, or that device's last-resort package when it has no other. Your own account can be claimed too, to add your other devices. For someone whose keys are on another IRCord server, the request goes over IRC; that server hands out at most 10 single-use packages a minute to one account, then only last-resort ones."),
 		func(ctx context.Context, in *E2EEAccountPath) (*Output[E2EEClaim], error) {
 			store, err := s.e2eeStore()
 			if err != nil {
 				return nil, err
 			}
 			id, err := e2eeOwner(store, in.Account)
+			var identity storage.E2EEIdentity
+			var claims []storage.E2EEClaim
+			if err == nil {
+				identity, claims, err = store.ClaimE2EEKeyPackages(id)
+			}
+			if errors.Is(err, storage.ErrNotFound) {
+				remote, err := s.Manager.E2EERemoteDirectory(ctx, owner(ctx), in.Account, true)
+				if err != nil {
+					return nil, e2eeRemoteFailure(err)
+				}
+				out := E2EEClaim{Account: remote.Account, IdentityKey: remote.IdentityKey, Generation: remote.Generation, Items: []E2EEClaimedPackage{}, Source: "network"}
+				if len(remote.DeviceList) > 0 {
+					out.DeviceList = &E2EEDeviceList{List: remote.DeviceList, Counter: remote.ListCounter}
+				}
+				for _, d := range remote.Devices {
+					if len(d.KeyPackage) > 0 {
+						out.Items = append(out.Items, E2EEClaimedPackage{DeviceID: d.ID, Certificate: d.Certificate, KeyPackage: d.KeyPackage, LastResort: d.LastResort})
+					}
+				}
+				return &Output[E2EEClaim]{Body: out}, nil
+			}
 			if err != nil {
 				return nil, e2eeFailure(err)
 			}
-			identity, claims, err := store.ClaimE2EEKeyPackages(id)
-			if err != nil {
+			out := E2EEClaim{Account: in.Account, IdentityKey: identity.IdentityKey, Generation: identity.Generation, Items: []E2EEClaimedPackage{}, Source: "server"}
+			if out.DeviceList, err = e2eeDeviceList(store, id); err != nil {
 				return nil, e2eeFailure(err)
 			}
-			out := E2EEClaim{Account: in.Account, IdentityKey: identity.IdentityKey, Generation: identity.Generation, Items: []E2EEClaimedPackage{}}
 			for _, c := range claims {
 				out.Items = append(out.Items, E2EEClaimedPackage{DeviceID: c.Device, Certificate: c.Certificate, KeyPackage: c.KeyPackage, LastResort: c.LastResort})
 			}
@@ -729,6 +835,29 @@ func (s *Server) registerE2EE() {
 			}
 			return nil, e2eeFailure(store.DeleteE2EEApproval(owner(ctx), in.ID))
 		})
+}
+
+// e2eeRemoteFailure explains a directory lookup over IRC that failed. Without
+// a connection that passed the encryption self-test nothing can be asked.
+func e2eeRemoteFailure(err error) error {
+	var service *irc.ServiceError
+	if errors.As(err, &service) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return commandFailure(err)
+	}
+	return huma.Error404NotFound("This server has no encryption keys for this person and can't ask other IRCord servers right now.")
+}
+
+// e2eeDeviceList returns the account's signed device list, or nil before its
+// devices published one.
+func e2eeDeviceList(store *storage.Store, account string) (*E2EEDeviceList, error) {
+	list, counter, err := store.E2EEDeviceList(account)
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &E2EEDeviceList{List: list, Counter: counter}, nil
 }
 
 // cleanLabel accepts a short device name without control characters.

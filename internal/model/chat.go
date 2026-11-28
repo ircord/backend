@@ -42,6 +42,8 @@ type Member struct {
 	Account              string     `json:"account"`
 	// Device is set while this IRCord user is on a phone or tablet (#136).
 	Device string `json:"device,omitempty" enum:"phone,tablet" doc:"Set while this IRCord user is on a phone or tablet, from the ircord/device metadata key; absent on a desktop, when unknown, or for other clients."`
+	// Encryption is the public capability value of ircord/issues#19.
+	Encryption string `json:"encryption,omitempty" enum:"2" doc:"Set when the person's IRCord server accepts encrypted chats from other servers, from the ircord/e2ee metadata key: the handshake version. Shows the lock without asking anyone."`
 }
 type NetworkAuth struct {
 	Method      string `json:"method" enum:"none,sasl-plain,sasl-external,server-password,nickserv"`

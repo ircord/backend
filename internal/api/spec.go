@@ -103,6 +103,7 @@ func (s *Server) finalizeSpec() {
 		{"ConversationUpdatedEvent", "conversation.updated", model.Conversation{}},
 		{"ConversationCountsEvent", "conversation.counts", model.ConversationCounts{}},
 		{"ChannelServicesUpdatedEvent", "channel-services.updated", model.ChannelServicesChange{}},
+		{"E2EEChangedEvent", "e2ee.changed", model.E2EEChange{}},
 		{"NetworkUpdatedEvent", "network.updated", model.Network{}},
 		{"ProfileUpdatedEvent", "profile.updated", model.Member{}},
 		{"MemberUpdatedEvent", "member.updated", model.Member{}},

@@ -36,8 +36,10 @@ type connection struct {
 	attractReceived  map[string]time.Time
 	// e2eeTest is the encryption self-test of the current attempt; e2eeProbe is the
 	// tag value it sent to our own nick.
-	e2eeTest               e2eeTestState
-	e2eeProbe              string
+	e2eeTest  e2eeTestState
+	e2eeProbe string
+	// handshake carries encrypted chats' handshake objects; see e2ee_transport.go.
+	handshake              handshakeTransport
 	createdAt              time.Time
 	modeListGate           chan struct{}
 	modeList               *modeListRequest

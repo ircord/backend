@@ -132,6 +132,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	s.registerHashField()
 	s.registerIrcoid()
 	s.registerE2EE()
+	s.registerE2EEChats()
 	s.registerConnectionAPI(router)
 	s.registerFiles(router)
 	s.registerFileHost(router)
