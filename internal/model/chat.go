@@ -94,7 +94,7 @@ type Capabilities struct {
 	Upload     *UploadCapability     `json:"upload,omitempty" doc:"Application upload service availability and limits; distinct from IRC network features."`
 	Moderation *ModerationCapability `json:"moderation,omitempty" doc:"Present when the signed-in account is a server owner who can delete other people's channel messages and mark bots on one network."`
 	Themes     *ThemeCapability      `json:"themes,omitempty" doc:"What personal themes may do on this instance. Absent from older backends, which allow everything."`
-	Encryption *EncryptionCapability `json:"encryption,omitempty" doc:"Present when the server operator turned on end-to-end encryption, an experimental feature."`
+	Encryption *EncryptionCapability `json:"encryption,omitempty" doc:"Present while end-to-end encryption, an experimental feature, is on for this server. Read again after a reconnect: server owners can turn it on or off at any time."`
 }
 
 // ThemeCapability carries the operator's choices for personal themes.

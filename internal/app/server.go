@@ -70,6 +70,9 @@ func Run(ctx context.Context) error {
 	defer func() { stopMedia(); <-mediaDone }()
 	ircOptions := cfg.irc
 	ircOptions.Store = store
+	if err := savedE2EE(ctx, store, &ircOptions); err != nil {
+		return err
+	}
 	publicURL, blob := cfg.publicURL, cfg.blob
 	files, err := filehost.New(filehost.Options{Store: store, Blob: blob, AvatarBlob: filehost.Local{Root: filepath.Join(dataDir, "avatars")}, PublicURL: strings.TrimRight(publicURL.String(), "/"), Client: irc.HTTPClientTimeout(ircOptions.AllowPrivate, irc.UploadTimeout), TrustedHosts: strings.Split(os.Getenv("IRCORD_FILEHOST_TRUSTED_HOSTS"), ","), QuotaBytes: cfg.uploads.quotaBytes, QuotaFiles: cfg.uploads.quotaFiles})
 	if err != nil {

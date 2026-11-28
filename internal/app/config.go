@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -13,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"ircord/backend/internal/api"
 	"ircord/backend/internal/auth"
 	"ircord/backend/internal/filehost"
 	"ircord/backend/internal/irc"
 	"ircord/backend/internal/linkmedia"
+	"ircord/backend/internal/storage"
 )
 
 type config struct {
@@ -71,17 +74,34 @@ func uploadPolicy(get func(string) string) (uploadLimits, error) {
 	return limits, nil
 }
 
-// e2eePolicy reads the operator switch for end-to-end encryption. It is off by
-// default; "experimental" turns it on while the feature awaits its outside review.
-func e2eePolicy(value string) (bool, error) {
+// e2eePolicy reads IRCORD_E2EE, the operator's lock on end-to-end encryption.
+// Unset, server owners choose the mode in Administration and it starts off. Set
+// to "off" or "experimental", it fixes the mode and owners can't change it.
+func e2eePolicy(value string) (on, locked bool, err error) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "", "off":
-		return false, nil
+	case "":
+		return false, false, nil
+	case "off":
+		return false, true, nil
 	case "experimental":
-		return true, nil
+		return true, true, nil
 	default:
-		return false, fmt.Errorf("IRCORD_E2EE must be off or experimental")
+		return false, false, fmt.Errorf("IRCORD_E2EE must be off or experimental, or unset to let server owners choose")
 	}
+}
+
+// savedE2EE starts encryption in the mode server owners last saved, unless
+// IRCORD_E2EE fixes it. A server where nobody chose a mode starts with it off.
+func savedE2EE(ctx context.Context, store *storage.Store, options *irc.Options) error {
+	if options.E2EELocked {
+		return nil
+	}
+	setting, err := store.ServerSetting(ctx, storage.SettingEncryption)
+	if err != nil {
+		return err
+	}
+	options.E2EE = setting.Value == api.EncryptionExperimental
+	return nil
 }
 
 func env(name, fallback string) string {
@@ -168,7 +188,7 @@ func loadConfig() (config, error) {
 	}
 	c.webPush = os.Getenv("IRCORD_WEB_PUSH") != "false"
 	c.customCSS = os.Getenv("IRCORD_CUSTOM_CSS") != "false"
-	if c.irc.E2EE, err = e2eePolicy(os.Getenv("IRCORD_E2EE")); err != nil {
+	if c.irc.E2EE, c.irc.E2EELocked, err = e2eePolicy(os.Getenv("IRCORD_E2EE")); err != nil {
 		return config{}, err
 	}
 	trustedProxies := []netip.Prefix{}
