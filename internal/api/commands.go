@@ -21,6 +21,7 @@ type MessageInput struct {
 		Kind        string              `json:"kind,omitempty" enum:"message,action"`
 		Attachments []string            `json:"attachments,omitempty" nullable:"false" maxItems:"10" uniqueItems:"true" doc:"Ordered upload IDs. Text must contain only their URLs in the same order, separated by spaces or newlines; one upload requires its exact URL."`
 		Endpoint    *model.SendEndpoint `json:"endpoint,omitempty" doc:"The original network endpoint for a retained browser send."`
+		Encrypted   *model.Encrypted    `json:"encrypted,omitempty" doc:"An end-to-end encrypted message for a direct conversation on a network whose features report encryption. Leave text empty or set it to the placeholder, and leave out kind, replyToId, gif and attachments: they travel inside the payload."`
 	}
 }
 type CommandResponse struct {
@@ -101,7 +102,7 @@ func (s *Server) registerCommands() {
 		return result(s.finishRedaction(ctx, r, err, in.Reason, in.DeleteFiles))
 	})
 	huma.Register(s.API, huma.Operation{OperationID: "send-message", Method: "POST", Path: "/api/v1/conversations/{id}/messages", DefaultStatus: 202}, func(ctx context.Context, in *MessageInput) (*Output[CommandResponse], error) {
-		input := irc.SendInput{ClientID: in.Body.ClientID, ConversationID: in.ID, Text: in.Body.Text, ReplyToID: in.Body.ReplyToID, GIF: in.Body.GIF, Kind: in.Body.Kind, Attachments: in.Body.Attachments, Endpoint: in.Body.Endpoint}
+		input := irc.SendInput{ClientID: in.Body.ClientID, ConversationID: in.ID, Text: in.Body.Text, ReplyToID: in.Body.ReplyToID, GIF: in.Body.GIF, Kind: in.Body.Kind, Attachments: in.Body.Attachments, Endpoint: in.Body.Endpoint, Encrypted: in.Body.Encrypted}
 		if err := s.Manager.Send(owner(ctx), input); err != nil {
 			return result(CommandResponse{}, err)
 		}

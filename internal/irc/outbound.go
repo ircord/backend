@@ -32,6 +32,13 @@ func (m *Manager) Send(owner string, input SendInput) error {
 	if err := m.partyAccess(owner, input.ConversationID); err != nil {
 		return err
 	}
+	if input.Encrypted == nil {
+		if err := m.refusePlaintext(owner, input.ConversationID); err != nil {
+			return err
+		}
+	} else if !m.E2EEEnabled() {
+		return ErrEncryptionOff
+	}
 	command, err := m.queueSend(owner, input)
 	if err != nil {
 		switch {

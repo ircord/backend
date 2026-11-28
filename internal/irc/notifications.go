@@ -16,7 +16,7 @@ func (m *Manager) notifyMessage(w *workspace, conv Conversation, msg Message, se
 	if conv.ChannelSettings != nil {
 		shared = conv.ChannelSettings.Notifications
 	}
-	if m.options.Push == nil && m.options.Router == nil || msg.Historical || msg.Deleted || w.deleted || w.storageErr != nil {
+	if m.options.Push == nil && m.options.Router == nil || msg.Historical || msg.Deleted || auxiliary(msg) || w.deleted || w.storageErr != nil {
 		return
 	}
 	// This runs with the workspace lock after storing the live message. Check
@@ -33,7 +33,7 @@ func (m *Manager) notifyMessage(w *workspace, conv Conversation, msg Message, se
 			return
 		}
 	}
-	kind := w.policy.Notification(conv.ID, conversationPolicyKind(conv), shared, msg.Kind, msg.Text, w.recipient(conv, nick, msg), sender.Nick, sender.Username, sender.Host, sender.ID == w.self.ID, time.Now(), replyToSelf...)
+	kind := w.policy.Notification(conv.ID, conversationPolicyKind(conv), shared, msg.Kind, policyText(msg), w.recipient(conv, nick, msg), sender.Nick, sender.Username, sender.Host, sender.ID == w.self.ID, time.Now(), replyToSelf...)
 	if kind == "" {
 		return
 	}
@@ -56,6 +56,10 @@ func (m *Manager) notifyMessage(w *workspace, conv Conversation, msg Message, se
 	if msg.GIF != nil && strings.TrimSpace(text) == "" {
 		text = "Sent a GIF"
 	}
+	if encryptedOnly(msg) {
+		// The sender's name stays; an open app decrypts and shows the real text.
+		text = EncryptedNotificationBody
+	}
 	body := []rune(text)
 	if len(body) > 512 {
 		body = body[:512]
@@ -66,6 +70,20 @@ func (m *Manager) notifyMessage(w *workspace, conv Conversation, msg Message, se
 		return
 	}
 	_ = m.options.Push.Notify(w.ownerID, push.Payload{Title: title, Body: string(body), ConversationID: conv.ID, Tag: conv.ID, Badge: badge})
+}
+
+// EncryptedNotificationBody replaces the text of an encrypted message in push
+// and device alerts: the server has nothing else to show.
+const EncryptedNotificationBody = "New encrypted message"
+
+// policyText is the text that notification and inbox rules read. The server
+// can't read an encrypted message, and keyword rules must not match its
+// placeholder, so they see no text at all.
+func policyText(msg Message) string {
+	if encryptedOnly(msg) {
+		return ""
+	}
+	return msg.Text
 }
 
 // recipient is this account as conv sees it, for group mentions such as

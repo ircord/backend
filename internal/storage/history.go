@@ -207,9 +207,13 @@ func (s *Store) NotificationMessageUnread(owner, conversation, message string) (
 
 func (s *Store) Unread(owner, conversation string) (int, error) {
 	var n int
-	err := s.DB.QueryRow("SELECT count(*) FROM messages m LEFT JOIN conversation_read r ON r.owner=m.owner AND r.conversation=m.conversation WHERE m.owner=? AND m.conversation=? AND m.sender NOT IN (SELECT member FROM ignored_senders WHERE owner=m.owner) AND m.kind IN ('message','action','notice') AND "+unreadScope, owner, conversation).Scan(&n)
+	err := s.DB.QueryRow("SELECT count(*) FROM messages m LEFT JOIN conversation_read r ON r.owner=m.owner AND r.conversation=m.conversation WHERE m.owner=? AND m.conversation=? AND m.sender NOT IN (SELECT member FROM ignored_senders WHERE owner=m.owner) AND m.kind IN ('message','action','notice') AND "+notAuxiliary+" AND "+unreadScope, owner, conversation).Scan(&n)
 	return n, err
 }
+
+// notAuxiliary leaves out encrypted reactions, edits, deletes and control
+// events, which are messages on the wire but never count as unread.
+const notAuxiliary = "coalesce(json_extract(m.payload,'$.encrypted.class'),'')!='" + model.EncryptedAuxiliary + "'"
 
 // MarkUnread moves the unread boundary back to a stored message of the conversation.
 // The monotonic read position is kept, so upstream read markers never move backwards.

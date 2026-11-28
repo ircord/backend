@@ -71,6 +71,19 @@ func uploadPolicy(get func(string) string) (uploadLimits, error) {
 	return limits, nil
 }
 
+// e2eePolicy reads the operator switch for end-to-end encryption. It is off by
+// default; "experimental" turns it on while the feature awaits its outside review.
+func e2eePolicy(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "off":
+		return false, nil
+	case "experimental":
+		return true, nil
+	default:
+		return false, fmt.Errorf("IRCORD_E2EE must be off or experimental")
+	}
+}
+
 func env(name, fallback string) string {
 	if value := os.Getenv(name); value != "" {
 		return value
@@ -155,6 +168,9 @@ func loadConfig() (config, error) {
 	}
 	c.webPush = os.Getenv("IRCORD_WEB_PUSH") != "false"
 	c.customCSS = os.Getenv("IRCORD_CUSTOM_CSS") != "false"
+	if c.irc.E2EE, err = e2eePolicy(os.Getenv("IRCORD_E2EE")); err != nil {
+		return config{}, err
+	}
 	trustedProxies := []netip.Prefix{}
 	for _, raw := range strings.Split(os.Getenv("IRCORD_TRUSTED_PROXIES"), ",") {
 		if strings.TrimSpace(raw) == "" {

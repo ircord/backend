@@ -129,6 +129,7 @@ func New(manager *irc.Manager, options Options) *Server {
 	s.registerInbox()
 	s.registerHashField()
 	s.registerIrcoid()
+	s.registerE2EE()
 	s.registerConnectionAPI(router)
 	s.registerFiles(router)
 	s.registerFileHost(router)
@@ -169,6 +170,7 @@ func (s *Server) capabilities(accountID string) model.Capabilities {
 		Themes:     &model.ThemeCapability{CustomCSS: !s.options.DisableCustomCSS},
 		Parties:    s.Manager.PartyCapability(accountID),
 		Moderation: s.Manager.ModerationCapability(accountID),
+		Encryption: s.Manager.EncryptionCapability(),
 	}
 	if s.options.Files != nil {
 		p := s.options.Files.LocalProvider()

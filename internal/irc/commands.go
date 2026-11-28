@@ -69,6 +69,9 @@ func (m *Manager) RawCommand(owner, network, clientID, line string) error {
 	if err := c.validateChannelCommand(event); err != nil {
 		return err
 	}
+	if err := c.refuseRawPlaintext(event); err != nil {
+		return err
+	}
 	if event.Command == "PRIVMSG" || event.Command == "NOTICE" {
 		c.mu.Lock()
 		limit := c.lineBytes

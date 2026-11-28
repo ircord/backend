@@ -110,7 +110,15 @@ func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed 
 		at = time.Now().UTC()
 	}
 	msg := Message{Position: position, ID: messageID, ConversationID: conv.ID, SenderID: sender.ID, Text: e.Last(), CreatedAt: at, Kind: "message", Reactions: []Reaction{}, UpstreamID: upstream}
-	if encoded := e.Tags["+ircord/gif"]; len(encoded) > 0 && len(encoded) <= 2500 {
+	if e.Command == "PRIVMSG" {
+		// The body of an encrypted line is a placeholder. Whatever a sender put
+		// there is replaced, and every other content tag is ignored: replies, GIFs,
+		// files and edits of an encrypted message travel inside its ciphertext.
+		if msg.Encrypted = parseEncryptedTag(e.Tags[e2eeTag]); msg.Encrypted != nil {
+			msg.Text = model.EncryptedPlaceholder
+		}
+	}
+	if encoded := e.Tags["+ircord/gif"]; len(encoded) > 0 && len(encoded) <= 2500 && !encryptedOnly(msg) {
 		if raw, err := base64.RawURLEncoding.DecodeString(encoded); err == nil {
 			var gif GIF
 			if json.Unmarshal(raw, &gif) == nil && ValidGIF(&gif) && gif.URL == msg.Text {
@@ -122,7 +130,9 @@ func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed 
 		msg.Kind = "action"
 		msg.Text = strings.TrimSuffix(strings.TrimPrefix(msg.Text, "\x01ACTION "), "\x01")
 	}
-	c.readAttachments(&msg, e.Tags)
+	if !encryptedOnly(msg) {
+		c.readAttachments(&msg, e.Tags)
+	}
 	if e.Command == "NOTICE" {
 		msg.Kind = "notice"
 	}
@@ -151,7 +161,7 @@ func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed 
 			msg.Text = existing.Text
 		}
 	}
-	if original := e.Tags[editTag]; original != "" {
+	if original := e.Tags[editTag]; original != "" && !encryptedOnly(msg) {
 		switch c.incomingEdit(conv, sender, e, msg, historical) {
 		case editConsumed:
 			return
@@ -176,6 +186,11 @@ func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed 
 				needsAcknowledgment = true
 			}
 			msg.GIF = p.input.GIF
+			if p.input.Encrypted != nil {
+				// A local echo has no tags; the queued send says what was sent.
+				encrypted := *p.input.Encrypted
+				msg.Encrypted, msg.Text, msg.Kind = &encrypted, model.EncryptedPlaceholder, "message"
+			}
 			if len(p.input.Attachments) == 0 {
 				msg.SetAttachments(nil)
 			} else {
@@ -203,10 +218,16 @@ func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed 
 		return
 	}
 	msg.Historical = historical
-	msg.Mention = sender.ID != w.self.ID && msg.Kind != "system" && msg.Kind != "event" && (conv.Kind == "direct" || w.policy.Mentioned(msg.Text, w.recipient(conv, c.currentNick(), msg)))
+	// The server can't read an encrypted message, so only a direct conversation,
+	// where every message counts, gives it a mention. Auxiliary events never do.
+	msg.Mention = sender.ID != w.self.ID && msg.Kind != "system" && msg.Kind != "event" && !auxiliary(msg) &&
+		(conv.Kind == "direct" || !encryptedOnly(msg) && w.policy.Mentioned(msg.Text, w.recipient(conv, c.currentNick(), msg)))
 	reply := e.Tags["+reply"]
 	if reply == "" {
 		reply = e.Tags["+draft/reply"]
+	}
+	if encryptedOnly(msg) {
+		reply = ""
 	}
 	// Only a reply tag naming a message IRCord has stored counts as a reply to you.
 	replyToSelf := false
@@ -240,7 +261,7 @@ func (c *connection) messageWithReceipt(e girc.Event, forceHistory, unconfirmed 
 		w.messages[conv.ID] = append([]Message(nil), w.messages[conv.ID][len(w.messages[conv.ID])-500:]...)
 	}
 	w.boundCache(conv.ID)
-	if !historical && sender.ID != w.self.ID && !w.policy.Ignored(sender.Nick, sender.Username, sender.Host) {
+	if !historical && sender.ID != w.self.ID && !auxiliary(msg) && !w.policy.Ignored(sender.Nick, sender.Username, sender.Host) {
 		conv.UnreadCount++
 		if msg.Mention {
 			conv.MentionCount++
@@ -286,6 +307,9 @@ func ValidGIF(g *GIF) bool {
 }
 
 func normalizeSendInput(input *SendInput) error {
+	if input.Encrypted != nil {
+		return normalizeEncryptedInput(input)
+	}
 	if input.Kind == "" {
 		input.Kind = "message"
 	}
@@ -301,6 +325,12 @@ func normalizeSendInput(input *SendInput) error {
 func (m *Manager) dispatchSend(owner string, input SendInput, expected *connection) error {
 	if e := m.partyAccess(owner, input.ConversationID); e != nil {
 		return e
+	}
+	// A plaintext send queued before encryption was turned on fails here too.
+	if input.Encrypted == nil {
+		if e := m.refusePlaintext(owner, input.ConversationID); e != nil {
+			return e
+		}
 	}
 	w := m.space(owner)
 	w.mu.Lock()
@@ -437,6 +467,26 @@ func (m *Manager) dispatchSend(owner string, input SendInput, expected *connecti
 	}
 	if !tagAllowed(isupport["CLIENTTAGDENY"], "ircord/client-id") {
 		delete(tags, "+ircord/client-id")
+	}
+	if input.Encrypted != nil {
+		if conv.Kind != "direct" {
+			c.mu.Unlock()
+			return fmt.Errorf("%w: encrypted messages work in direct conversations for now", ErrUnsupported)
+		}
+		if !features.Encryption || tags == nil {
+			// The self-test of a new connection is still running: keep the send queued.
+			testing := c.e2eeTest == e2eeTesting && c.e2eeEligibleLocked(isupport["CLIENTTAGDENY"])
+			c.mu.Unlock()
+			if testing {
+				return ErrBusy
+			}
+			return errEncryptionUnavailable
+		}
+		tags[e2eeTag] = encryptedTagValue(input.Encrypted)
+		if tagBytes(tags) > maxSendTagBytes {
+			c.mu.Unlock()
+			return fmt.Errorf("encrypted message is too large for one IRC line; split it into smaller parts")
+		}
 	}
 	if err := addAttachmentTags(tags, attachments, isupport["CLIENTTAGDENY"]); err != nil {
 		c.mu.Unlock()

@@ -78,7 +78,7 @@ func (s *Store) SavedList(owner, after, query string, limit int) ([]SavedEntry, 
 		args = append(args, c.At, c.At, c.ID)
 	}
 	if query != "" {
-		sqlText += " AND m.payload IS NOT NULL AND coalesce(json_extract(m.payload,'$.deleted'),0)=0 AND instr(lower(m.text),lower(?))>0"
+		sqlText += " AND m.payload IS NOT NULL AND coalesce(json_extract(m.payload,'$.deleted'),0)=0 AND json_extract(m.payload,'$.encrypted') IS NULL AND instr(lower(m.text),lower(?))>0"
 		args = append(args, query)
 	}
 	sqlText += " ORDER BY s.saved_ns DESC,s.message DESC LIMIT ?"
