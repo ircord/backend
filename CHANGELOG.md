@@ -2,10 +2,12 @@
 
 ## Unreleased
 
+## v0.9.0 — 2026-11-28
+
 ### New
 
 - Server operators can turn on experimental end-to-end encrypted direct messages between people on the server's home network. The server delivers these messages but can't read them, and keeps them out of search, link lists, the inbox text and notification text.
-- Server owners can turn encrypted direct messages on or off without a restart. Turning them off deletes nothing: devices with keys can still read earlier encrypted messages, but nobody can start new ones. An operator setting can fix the choice.
+- Server owners can turn encrypted direct messages on or off in Administration, without a restart. Turning them off deletes nothing: devices with keys can still read earlier encrypted messages, but nobody can start new ones. Setting IRCORD_E2EE (off or experimental) locks the choice so owners can't change it.
 
 ## v0.8.2 — 2026-11-27
 
