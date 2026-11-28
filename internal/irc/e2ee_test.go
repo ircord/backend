@@ -202,7 +202,7 @@ func TestEncryptionCapabilityGate(t *testing.T) {
 		t.Fatal("encryption offered on a network other than the home network")
 	}
 	off := newE2EEFixture(t)
-	off.m.options.E2EE = false
+	off.m.SetE2EE(false)
 	off.passGate()
 	if off.features("").Encryption || off.m.EncryptionCapability() != nil {
 		t.Fatal("encryption offered with the operator switch off")
@@ -449,11 +449,11 @@ func TestPlaintextRefusedInEncryptedConversation(t *testing.T) {
 
 	// With the operator switch off nothing is refused: the conversation must stay
 	// usable when encryption can neither be used nor turned off.
-	f.m.options.E2EE = false
+	f.m.SetE2EE(false)
 	if err := f.m.Send("alice", SendInput{ClientID: "c4", ConversationID: conv.ID, Text: "switch off"}); err != nil {
 		t.Fatalf("plaintext with the operator switch off: %v", err)
 	}
-	f.m.options.E2EE = true
+	f.m.SetE2EE(true)
 	drain(f.c)
 
 	// Turning encryption off accepts plaintext again.
@@ -500,7 +500,7 @@ func TestEncryptedSendNeedsTheGate(t *testing.T) {
 	if err := send("e3", channel.ID); !errors.Is(err, ErrUnsupported) {
 		t.Fatalf("encrypted send to a channel: %v", err)
 	}
-	f.m.options.E2EE = false
+	f.m.SetE2EE(false)
 	if err := send("e4", conv.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("encrypted send with the operator switch off: %v", err)
 	}

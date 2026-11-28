@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/lrstanley/girc"
@@ -44,9 +45,13 @@ type Options struct {
 	// Moderation is the operator login on the associated server that carries out
 	// server owners' deletions. Without it, server owners delete like anyone else.
 	Moderation *ModerationLogin
-	// E2EE is the operator switch for end-to-end encryption between IRCord
-	// clients on the home network. It is experimental and off by default.
+	// E2EE is the starting state of the switch for end-to-end encryption between
+	// IRCord clients on the home network. It is experimental and off by default;
+	// SetE2EE changes it while the server runs.
 	E2EE bool
+	// E2EELocked means the operator's configuration fixes E2EE, so server owners
+	// can see the mode but not change it.
+	E2EELocked bool
 }
 
 // Presets returns only public operator-provided connection hints.
@@ -80,6 +85,8 @@ type Manager struct {
 	sharedMu     sync.Mutex
 	shared       map[string]ChannelSettings
 	sharedLoaded bool
+	// e2ee is the current encryption switch; see E2EEEnabled.
+	e2ee atomic.Bool
 }
 
 func New(options Options) *Manager {
@@ -95,6 +102,7 @@ func New(options Options) *Manager {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{profileExpiryWake: make(chan struct{}, 1), serviceSlots: make(chan struct{}, 16), checkSlots: make(chan struct{}, 16), listSlots: make(chan struct{}, 4), deletedOwners: map[string]bool{}, owners: map[string]*workspace{}, options: options, ctx: ctx, cancel: cancel}
+	m.e2ee.Store(options.E2EE)
 	m.wg.Add(1)
 	go m.runProfileExpiry()
 	m.partyPeople.limit = 128

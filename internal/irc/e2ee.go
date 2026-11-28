@@ -43,9 +43,51 @@ var (
 	ErrPlaintextRefused = serviceError(409, "This conversation is end-to-end encrypted. Send an encrypted message, or turn off encryption first.")
 )
 
-// E2EEEnabled reports whether the operator turned on end-to-end encryption.
-// It needs durable storage, which keeps the key directory and the group log.
-func (m *Manager) E2EEEnabled() bool { return m.options.E2EE && m.options.Store != nil }
+// E2EEEnabled reports whether end-to-end encryption is turned on now. It needs
+// durable storage, which keeps the key directory and the group log.
+func (m *Manager) E2EEEnabled() bool { return m.e2ee.Load() && m.options.Store != nil }
+
+// E2EELocked reports whether the operator's configuration fixes the mode.
+func (m *Manager) E2EELocked() bool { return m.options.E2EELocked }
+
+// SetE2EE turns end-to-end encryption on or off while the server runs. Turning
+// it off deletes nothing: keys, groups and encrypted history stay, so devices
+// that hold keys can still read earlier messages, but no encrypted message,
+// group or key change is accepted until it is turned on again.
+//
+// Each connected network recomputes its features, so clients see the change in
+// network.updated. Turning it on starts the self-test on eligible connections.
+func (m *Manager) SetE2EE(on bool) {
+	if m.e2ee.Swap(on) == on {
+		return
+	}
+	m.mu.Lock()
+	spaces := make([]*workspace, 0, len(m.owners))
+	for _, w := range m.owners {
+		spaces = append(spaces, w)
+	}
+	m.mu.Unlock()
+	for _, w := range spaces {
+		w.mu.Lock()
+		connections := make([]*connection, 0, len(w.connections))
+		for _, c := range w.connections {
+			connections = append(connections, c)
+		}
+		w.mu.Unlock()
+		for _, c := range connections {
+			c.mu.Lock()
+			client := c.client
+			c.mu.Unlock()
+			if client == nil {
+				continue
+			}
+			c.callbackFromAttempt(client, func() {
+				c.refreshFeatures(client)
+				c.probeEncryption(client)
+			})
+		}
+	}
+}
 
 // EncryptionCapability is the application capability clients see in bootstrap.
 func (m *Manager) EncryptionCapability() *model.EncryptionCapability {

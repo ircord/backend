@@ -89,6 +89,8 @@ type Server struct {
 	images     imagevariant.Cache
 	guideFacts guideFacts
 	appEmoji   appEmojiCache
+	// encryptionMu keeps the saved and the running encryption mode in step.
+	encryptionMu sync.Mutex
 }
 
 func New(manager *irc.Manager, options Options) *Server {
